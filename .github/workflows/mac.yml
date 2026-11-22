@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['Sources/**', 'helper/**', 'assets/**', 'build.sh', '.github/workflows/mac.yml']
+    paths: ['Sources/**', 'helper/**', 'build.sh', '.github/workflows/mac.yml']
 
 permissions:
   contents: write

@@ -913,6 +913,7 @@ function checkTimers() {
     chime([880, 660, 880]);
     if (!S.pinned) S.expanded = false;
     showFlash({ kind: 'timerDone', title: `${Math.round(S.cd.durationMs / 60000)}m countdown` }, 30);
+    if (S.expanded && S.tab === 'timer') render(true);
   }
   if (S.pomo.running && S.pomo.endAt && now >= S.pomo.endAt) {
     const wasRest = S.pomo.phase !== 'focus';
@@ -921,6 +922,7 @@ function checkTimers() {
     chime(wasRest ? [784, 659] : [523, 659, 784]);
     if (!S.pinned) S.expanded = false;
     showFlash({ kind: 'focusEnd', rest: wasRest, title: 'Pomodoro' }, 30);
+    if (S.expanded && S.tab === 'timer') render(true);
   }
 }
 
@@ -1101,6 +1103,11 @@ function menuHTML() {
   let body = '';
   if (m.type === 'city') body = item(S.autoPlace ? `Current location · ${S.locating ? 'locating…' : S.place.name}` : 'Current location', 'cityAuto', {}, S.autoPlace)
     + `<div class="h">Cities</div>` + Places.CITIES.map((c) => item(`${c.name} · ${c.zone}`, 'city', { c: c.name }, !S.autoPlace && c.name === S.place.name)).join('');
+  if (m.type === 'theme') body = BUILTIN_THEMES.map((t) => item(t.name, 'theme', { id: t.id }, t.id === S.theme)).join('');
+  if (m.type === 'gear') body = item(`Theme · ${themeById(S.theme).name}`, 'themeMenu', {}, false)
+    + item(`Location · ${S.autoPlace ? 'Auto' : S.place.name}`, 'cityMenu', {}, false)
+    + item('Settings…', 'openSettings', {}, S.settingsOpen)
+    + `<div class="h"></div>` + item('Start at login', 'login', {}, m.login) + item('Quit Nusa', 'quit', {}, false);
   if (m.type === 'wx' && S.weather) body = `<div class="h">${esc(S.place.name)} · ${wxLabel(S.weather.code)} · feels ${Math.round(S.weather.feels)}°</div>`
     + S.weather.hours.filter((h) => h.time > Date.now() - 1800000).map((h) => `<button>${hhmm(new Date(h.time), S.place.tz)}  ${Math.round(h.temp)}°  rain ${h.rain}%</button>`).join('') + `<div class="h">Data: Open-Meteo</div>`;
   return `<div class="menu" style="left:${m.x}px;top:${m.y}px">${body}</div>`;
@@ -1112,6 +1119,7 @@ function openMenu(type, el, extra = {}) {
   render(true);
   const el2 = $('.menu');
   if (el2) { S.menu.h = el2.offsetHeight; render(); }
+  if (type === 'theme') $('.menu .on')?.scrollIntoView({ block: 'center' });
 }
 
 /* ================= Weather & Location ================= */
@@ -1589,9 +1597,12 @@ document.addEventListener('click', (e) => {
   const A = {
     tab: () => { S.settingsOpen = false; S.tab = d.tab; LS.set('tab', S.tab); S.menu = null; render(true); },
     pin: () => { S.pinned = !S.pinned; render(true); },
-    gear: async () => { S.loginAtBoot = await nusa.loginItem(); S.settingsOpen = !S.settingsOpen; S.menu = null; render(true); },
+    gear: async () => openMenu('gear', el, { login: await nusa.loginItem() }),
+    themeMenu: () => openMenu('theme', el),
+    theme: () => { S.theme = d.id; LS.set('theme', d.id); applyTheme(); S.menu = null; render(true); },
+    openSettings: async () => { S.loginAtBoot = await nusa.loginItem(); S.settingsOpen = true; S.menu = null; render(true); },
     closeSettings: () => { S.settingsOpen = false; render(true); },
-    login: async () => { S.loginAtBoot = await nusa.loginItem(!S.loginAtBoot); render(true); },
+    login: async () => { S.loginAtBoot = await nusa.loginItem(!S.loginAtBoot); S.menu = null; render(true); },
     quit: () => window.close(),
     cfgToggle: () => { S.cfg[d.k] = !S.cfg[d.k]; saveCfg(); render(true); },
     tabToggle: () => { S.cfg.tabs[d.k] = !S.cfg.tabs[d.k]; if (d.k === 'system' && !S.cfg.tabs.system) S.cfg.sysEnabled = false; saveCfg(); render(true); },

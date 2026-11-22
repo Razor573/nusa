@@ -1,4 +1,4 @@
-// Lokasi user buat jadwal sholat, kiblat & cuaca:
+// Lokasi user buat cuaca:
 // 1. Windows: Location bawaan Windows (WiFi/GPS, akurat sampai ratusan meter) lewat PowerShell + WinRT
 // 2. Cadangan (Location dimatiin / Linux / gagal): perkiraan dari IP (ipwho.is, level kota)
 // Nama kotanya dari BigDataCloud reverse-geocode (gratis, tanpa key). Koordinat yang dikirim dibulatkan ±1 km.

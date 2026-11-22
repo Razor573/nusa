@@ -227,14 +227,36 @@ function httpRequest(options, bodyBuffer = null) {
   });
 }
 
+const SystemMod = require('../system.js');
+const PrivacyMod = require('../privacy.js');
+const NotifMod = require('../notifications.js');
+
+const locJs = fs.readFileSync(path.join(__dirname, '..', 'location.js'), 'utf8');
+ok('location.js has no sholat/kiblat/prayer/quran refs', !/\b(sholat|kiblat|prayer|quran|adhan)\b/i.test(locJs));
+const iconsJs = fs.readFileSync(path.join(__dirname, '..', 'app', 'icons.js'), 'utf8');
+ok('icons.js has no dead moon/book/north prayer/quran icons', !/\b(moon|book|north)\s*:/.test(iconsJs));
+
+const sysSnap = SystemMod.snapshot();
+ok('System.snapshot shape',
+  typeof sysSnap.cpu === 'number' &&
+  typeof sysSnap.mem?.pct === 'number' &&
+  typeof sysSnap.disk?.free === 'number' &&
+  typeof sysSnap.uptimeSec === 'number');
+ok('Privacy & Notifications modules export start/stop',
+  typeof PrivacyMod.start === 'function' && typeof PrivacyMod.stop === 'function' &&
+  typeof NotifMod.start === 'function' && typeof NotifMod.stop === 'function');
+
 async function testPhoneDrop() {
   const tmpDownloads = fs.mkdtempSync(path.join(os.tmpdir(), 'nusa-test-pd-'));
   let receivedReq = null;
   let savedFiles = null;
 
   try {
+    const shelfFile = path.join(tmpDownloads, 'shelf-share.txt');
+    fs.writeFileSync(shelfFile, 'shared from shelf', 'utf8');
     const info = await PhoneDrop.start({
       app: { getPath: () => tmpDownloads },
+      getShelf: () => [shelfFile],
       onRequest: (req) => { receivedReq = req; },
       onFiles: (files) => { savedFiles = files; },
     });
@@ -290,6 +312,29 @@ async function testPhoneDrop() {
       fs.existsSync(approved[0]) &&
       fs.readFileSync(approved[0], 'utf8') === fileContent &&
       Array.isArray(savedFiles) && savedFiles[0] === approved[0]);
+
+    const resDl = await httpRequest({
+      hostname: '127.0.0.1',
+      port: info.port,
+      path: `/file?t=${info.token}&i=0`,
+      method: 'GET',
+    });
+    ok('PhoneDrop GET /file downloads shelf item', resDl.status === 200 && resDl.body === 'shared from shelf');
+
+    const resUp2 = await httpRequest({
+      hostname: '127.0.0.1',
+      port: info.port,
+      path: `/upload?t=${info.token}`,
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': multipartBody.length,
+      },
+    }, multipartBody);
+    const upJson2 = JSON.parse(resUp2.body || '{}');
+    const declinedTmp = receivedReq?.files?.[0]?.tmpPath;
+    PhoneDrop.decline(upJson2.id);
+    ok('PhoneDrop.decline cleans up staged temp file', Boolean(declinedTmp && !fs.existsSync(declinedTmp)));
 
     PhoneDrop.stop();
     ok('PhoneDrop.stop closes cleanly', PhoneDrop.status().active === false);

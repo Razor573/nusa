@@ -80,10 +80,10 @@ notch no matter which machine you're on.
 | 🎵 | **Now Playing** | HD artwork, source-app icon, seek bar, click the cover to jump to the app | ✅ | ✅ | ✅ |
 | ▶️ | **Music** | Control whatever app is playing (Spotify, YouTube, Media Player…), or the Senandung queue + search | ✅ | ✅ | ✅ |
 | ✅ | **Tasks** | Natural language: *"Rapat QC besok jam 9"*, *"Call Budi in 30 min"* | ✅ | ✅ | ✅ |
-| ⏱️ | **Timer / Stopwatch / Pomodoro** | Countdown presets & ±1m nudge, stopwatch with laps, 4-cycle Pomodoro with breaks | ✅ | ✅ | ✅ |
+| ⏱️ | **Timer / Stopwatch / Pomodoro** | Countdown presets & ±1m nudge, stopwatch with laps, 4-cycle Pomodoro with breaks | ✅ | — | ✅ |
 | 💧 | **Water** | Daily hydration goal, sip logging, bottle refill alert, hourly chart & smart reminders (off by default) | ✅ | — | ✅ |
-| 🗂️ | **File Shelf + Phone Drop** | Drop files on the notch to keep them, or scan a QR code to send/receive files with your phone over local Wi-Fi | ✅ | ✅ | ✅ |
-| 📋 | **Clipboard History** | Pinned & recent clips, search, text-only or text+images mode (off by default) | ✅ | ✅ | ✅ |
+| 🗂️ | **File Shelf + Phone Drop** | Drop files on the notch to keep them, or scan a QR code to send/receive files with your phone over local Wi-Fi | ✅ | — | ✅ |
+| 📋 | **Clipboard History** | Pinned & recent clips, search, text-only or text+images mode (off by default) | ✅ | — | ✅ |
 | 🔔 | **Notifications in Notch** | Mirror Windows notifications into the notch with per-app mute and optional body preview (off by default) | ✅ | — | — |
 | 📊 | **Live System Stats** | CPU, RAM, disk, network up/down & battery sparkline in the panel or closed notch (off by default) | ✅ | — | ✅ |
 | 🧰 | **Tools** | Math calculator (`1250*15%`, `2^10`, `sqrt(2)`), color picker/contrast, unit converter, QR generator & world clock | ✅ | — | ✅ |
