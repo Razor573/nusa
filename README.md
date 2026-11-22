@@ -22,7 +22,7 @@ Click it, and it unfolds into a full panel. Free, no account, no ads.
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-ff69b4?style=flat-square)](https://github.com/Hiroyki/nusa/issues)
 [![Built by Hiroyki](https://img.shields.io/badge/built%20by-Hiroyki-5cdba8?style=flat-square&logo=github&logoColor=white)](https://github.com/Hiroyki)
 
-> **🆕 Just landed (v1.0.1):** 📱 **Phone Drop** over local Wi-Fi, 💧 **Water tracker**, ⏱️ **Timer / Stopwatch / Pomodoro**, 🧰 **Tools** (calculator, color, units, QR, world clock), 🔔 **Windows notifications in the notch**, 📊 **Live system stats** & 🔴 **Mic/Camera dots** — all local-first with privacy-safe defaults. [What's new ↓](#-changelog)
+> **🆕 Just landed (closed-Nusa UI rebuild):** 🎶 **LRCLIB synced lyrics** (with click-to-seek), ☁️ **MET Norway weather**, ⚡ **Live Activities** (volume, brightness, Caps Lock, language, battery), 📅 **Google Calendar iCal**, 🧩 **Today & Widgets pages**, ✨ **Mono / Floating / Glass styles**, 🐾 **Nusa mascot**, and a **2-pane Settings** view — with Prayer times, Quran, and AI features completely removed. [What's new ↓](#-changelog)
 
 <br>
 
@@ -77,8 +77,9 @@ notch no matter which machine you're on.
 
 | | Feature | What it does | Windows | macOS | Linux |
 |:--:|---|---|:--:|:--:|:--:|
-| 🎵 | **Now Playing** | HD artwork, source-app icon, seek bar, click the cover to jump to the app | ✅ | ✅ | ✅ |
+| 🎵 | **Now Playing & Synced Lyrics** | HD artwork, source-app icon, seek bar, and **LRCLIB** synced lyrics with click-to-seek | ✅ | ✅ | ✅ |
 | ▶️ | **Music** | Control whatever app is playing (Spotify, YouTube, Media Player…), or the Senandung queue + search | ✅ | ✅ | ✅ |
+| 🏠 | **Today & Widgets Pages** | Glanceable **Today** overview + customizable **Widgets** page | ✅ | — | ✅ |
 | ✅ | **Tasks** | Natural language: *"Rapat QC besok jam 9"*, *"Call Budi in 30 min"* | ✅ | ✅ | ✅ |
 | ⏱️ | **Timer / Stopwatch / Pomodoro** | Countdown presets & ±1m nudge, stopwatch with laps, 4-cycle Pomodoro with breaks | ✅ | — | ✅ |
 | 💧 | **Water** | Daily hydration goal, sip logging, bottle refill alert, hourly chart & smart reminders (off by default) | ✅ | — | ✅ |
@@ -89,10 +90,11 @@ notch no matter which machine you're on.
 | 🧰 | **Tools** | Math calculator (`1250*15%`, `2^10`, `sqrt(2)`), color picker/contrast, unit converter, QR generator & world clock | ✅ | — | ✅ |
 | 🔴 | **Mic & Camera Dots** | Orange mic & green camera indicators in the notch when an app uses them (off by default) | ✅ | — | — |
 | 📍 | **Location** | Detects your city automatically (or pick one) for weather | ✅ | — | ✅ |
-| ☁️ | **Weather** | Temp, feels-like, hourly outlook, rain warnings | ✅ | ✅ | ✅ |
-| 🎨 | **Themes** | 11 built-in looks, switch from the gear menu | ✅ | — | ✅ |
-| 🔊 | **System** | Volume, battery, audio-device switch pop-up | ✅ | ✅ | ✅ |
-| 📅 | **Calendar** | Today's events + tasks due | ✅ | — | — |
+| ☁️ | **Weather (MET Norway)** | Temp, feels-like, hourly outlook, rain warnings via **MET Norway** (`api.met.no`) | ✅ | ✅ | ✅ |
+| 🎨 | **Styles, Themes & Mascot** | **Mono**, **Floating**, and **Glass** notch styles, 11 built-in dark themes, and optional **Nusa mascot** | ✅ | — | ✅ |
+| ⚙️ | **2-Pane Settings** | 13 organized categories: General, Display, Pages, Appearance, Music and lyrics, Notifications, Widgets, To-do, Pomodoro, Water, Shelf, HUD and popups, About | ✅ | — | ✅ |
+| ⚡ | **Live Activities** | Volume, brightness, Caps Lock, keyboard language, battery & audio-device switch pop-ups | ✅ | ✅ | ✅ |
+| 📅 | **Google Calendar (iCal)** | Today's events from your Google Calendar `.ics` feed + tasks due | ✅ | — | ✅ |
 | 🪞 | **Mirror** | Selfie camera, only turns on when you click it | ✅ | ✅ | — |
 
 > Everything around the notch is **click-through**, so it never gets in the way of your browser tabs or the app behind it.
@@ -206,7 +208,9 @@ uploaded file. Nusa only talks to the network for these:
 |---|---|---|
 | Your location | **Windows Location** (on-device) — or, if that's off, [ipwho.is](https://ipwho.is) | Nothing for Windows Location; your IP for the fallback |
 | City name | [BigDataCloud](https://www.bigdatacloud.com/free-api/free-reverse-geocode-to-city-api) | Coordinates rounded to ~1 km |
-| Weather | [Open-Meteo](https://open-meteo.com) | Coordinates of your city |
+| Weather | [MET Norway](https://api.met.no) (with [Open-Meteo](https://open-meteo.com) fallback) | Coordinates of your city |
+| Synced lyrics | [LRCLIB](https://lrclib.net) | Track title, artist, album & duration (only when lyrics are requested) |
+| Calendar | Google Calendar iCal (`.ics` URL you configure) | Direct read-only fetch of your private `.ics` feed |
 | HD album art | iTunes Search | Song title + artist |
 
 Don't want auto-location? Pick a city in **⚙ Settings → Location** and Nusa stops asking.
@@ -220,7 +224,9 @@ On Windows you can also turn it off in **Settings → Privacy & security → Loc
 | Desktop app (Win/macOS/Linux) | **Electron · JavaScript · HTML · CSS** |
 | Packaging | **electron-builder** (NSIS · DMG · AppImage · DEB) |
 | Phone Drop | Built-in Node `http` server + pure-JS QR encoder |
-| Weather | **[Open-Meteo](https://open-meteo.com)** |
+| Weather | **[MET Norway](https://api.met.no)** (with **[Open-Meteo](https://open-meteo.com)** fallback) |
+| Synced lyrics | **[LRCLIB](https://lrclib.net)** LRC parser & client |
+| Calendar | Built-in RFC 5545 **iCalendar (`.ics`)** parser for Google Calendar |
 | Location | **Windows.Devices.Geolocation** (WinRT) · IP fallback · BigDataCloud reverse-geocode |
 | Media control | **Windows SMTC** (WinRT) · MPRIS / `playerctl` on Linux |
 | Icons | Hand-drawn SVG — no icon-font dependency |
@@ -353,6 +359,20 @@ Ideas, bug reports and PRs are all welcome!
 ## 📝 Changelog
 
 <details open>
+<summary><b>Closed-Nusa UI Rebuild</b></summary>
+
+- 🎶 **LRCLIB synced lyrics** — time-synced LRC lyrics with **click-to-seek** in the Music view.
+- ☁️ **MET Norway weather** — switched primary weather provider to `api.met.no`.
+- ⚡ **Live Activities** — glanceable HUD pop-ups for **volume**, **brightness**, **Caps Lock**, **keyboard language**, and **battery**.
+- 📅 **Google Calendar iCal** — lightweight `.ics` parser for showing upcoming calendar events.
+- 🏠 **Today & Widgets pages** — dedicated **Today** overview and customizable **Widgets** page.
+- ✨ **Mono / Floating / Glass styles & Nusa mascot** — three notch presentation styles plus an optional **Nusa mascot** in the notch.
+- ⚙️ **2-pane Settings** — redesigned Settings with 13 categories (`General`, `Display`, `Pages`, `Appearance`, `Music and lyrics`, `Notifications`, `Widgets`, `To-do`, `Pomodoro`, `Water`, `Shelf`, `HUD and popups`, `About`).
+- 🧹 **Focused & distraction-free** — completely removed Prayer times, Quran, and AI features (Ask Nusa / Translate).
+
+</details>
+
+<details>
 <summary><b>v1.0.1 — life & productivity suite</b></summary>
 
 - 📱 **Phone Drop** — send and receive files between your phone and desktop over local Wi-Fi via QR code, with explicit approval before saving.

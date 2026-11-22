@@ -2,6 +2,8 @@
 // - Windows: Core Audio lewat C# kecil yang dikompilasi PowerShell (Add-Type), jalan terus & baca perintah dari stdin
 // - Linux: `pactl` (PulseAudio / PipeWire)
 const { spawn, execFile } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 const CS = `
 using System;
@@ -97,6 +99,8 @@ namespace NusaAudio {
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint idThread);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int a, out int v, int size);
     static readonly EnumProc checkCb = new EnumProc(Check);
     static bool hit;
@@ -133,6 +137,31 @@ namespace NusaAudio {
       return hit;
     }
 
+    static void FgInfo(out string lang, out bool fullscreen) {
+      lang = "";
+      fullscreen = false;
+      try {
+        IntPtr fg = GetForegroundWindow();
+        if (fg == IntPtr.Zero || !IsWindowVisible(fg)) return;
+        uint pid;
+        uint tid = GetWindowThreadProcessId(fg, out pid);
+        IntPtr hkl = GetKeyboardLayout(tid);
+        int langId = (int)((long)hkl & 0xFFFF);
+        if (langId > 0) {
+          try { lang = new CultureInfo(langId).ThreeLetterISOLanguageName.ToUpperInvariant(); } catch { }
+        }
+        int cloaked;
+        if (DwmGetWindowAttribute(fg, 14, out cloaked, 4) == 0 && cloaked != 0) return;
+        string pn = "";
+        try { pn = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName.ToLowerInvariant(); } catch { }
+        if (Array.IndexOf(shell, pn) >= 0) return;
+        RECT r;
+        if (!GetWindowRect(fg, out r)) return;
+        int sw = GetSystemMetrics(0), sh = GetSystemMetrics(1);
+        if (sw > 0 && sh > 0 && (r.R - r.L) >= sw && (r.B - r.T) >= sh) fullscreen = true;
+      } catch { }
+    }
+
     static void ReadInput() {
       string line;
       while ((line = Console.In.ReadLine()) != null) {
@@ -158,6 +187,10 @@ namespace NusaAudio {
       while (true) {
         string line = "{}";
         string cover = Covered() ? "true" : "false";
+        string caps = Console.CapsLock ? "true" : "false";
+        string lang; bool fs;
+        FgInfo(out lang, out fs);
+        string meta = "\\"cover\\":" + cover + ",\\"caps\\":" + caps + ",\\"lang\\":\\"" + Esc(lang) + "\\",\\"fullscreen\\":" + (fs ? "true" : "false");
         try {
           IMMDevice dev;
           if (en.GetDefaultAudioEndpoint(0, 1, out dev) == 0 && dev != null) {
@@ -178,10 +211,10 @@ namespace NusaAudio {
             string up = inst.ToUpperInvariant();
             bool bt = up.Contains("BTHENUM") || up.Contains("BTHHFENUM") || up.Contains("BTHLE");
             line = "{\\"vol\\":" + Math.Round(level, 3).ToString(CultureInfo.InvariantCulture) + ",\\"muted\\":" + (muted ? "true" : "false")
-              + ",\\"id\\":\\"" + Esc(curId) + "\\",\\"name\\":\\"" + Esc(name) + "\\",\\"bt\\":" + (bt ? "true" : "false") + ",\\"ff\\":" + ff + ",\\"cover\\":" + cover + "}";
+              + ",\\"id\\":\\"" + Esc(curId) + "\\",\\"name\\":\\"" + Esc(name) + "\\",\\"bt\\":" + (bt ? "true" : "false") + ",\\"ff\\":" + ff + "," + meta + "}";
           }
         } catch { curId = null; }
-        if (line == "{}") line = "{\\"cover\\":" + cover + "}";
+        if (line == "{}") line = "{" + meta + "}";
         if (line != last) { Console.Out.WriteLine(line); Console.Out.Flush(); last = line; }
         Thread.Sleep(200);
       }
@@ -198,7 +231,24 @@ ${CS}
 let proc = null;
 let emit = () => {};
 let onCover = () => {};
+let onExtra = null;
 let lastCover = null;
+let lastCaps = null;
+let lastLang = null;
+let lastFullscreen = false;
+let lastBrightness = null;
+let brightnessTimer = null;
+let brightnessBusy = false;
+
+function emitHud(data) {
+  if (typeof onExtra === 'function') onExtra({ type: 'hud', data });
+  else if (onExtra && typeof onExtra.onHud === 'function') onExtra.onHud(data);
+}
+
+function emitFullscreen(fs) {
+  if (typeof onExtra === 'function') onExtra({ type: 'fullscreen', data: fs });
+  else if (onExtra && typeof onExtra.onFullscreen === 'function') onExtra.onFullscreen(fs);
+}
 
 function startWindows() {
   const run = () => {
@@ -215,7 +265,22 @@ function startWindows() {
         try {
           const o = JSON.parse(line);
           if (typeof o.cover === 'boolean' && o.cover !== lastCover) { lastCover = o.cover; onCover(o.cover); }
+          if (typeof o.caps === 'boolean') {
+            if (lastCaps !== null && o.caps !== lastCaps) emitHud({ kind: 'caps', on: o.caps });
+            lastCaps = o.caps;
+          }
+          if (typeof o.lang === 'string' && o.lang) {
+            if (lastLang !== null && o.lang !== lastLang) emitHud({ kind: 'lang', lang: o.lang });
+            lastLang = o.lang;
+          }
+          if (typeof o.fullscreen === 'boolean' && o.fullscreen !== lastFullscreen) {
+            lastFullscreen = o.fullscreen;
+            emitFullscreen(o.fullscreen);
+          }
           delete o.cover;
+          delete o.caps;
+          delete o.lang;
+          delete o.fullscreen;
           emit(o.id ? o : null);
         } catch { /* baris rusak, lewati */ }
       }
@@ -237,12 +302,62 @@ function startLinux() {
   read();
 }
 
-/** cb(state audio), cover(bool): ada jendela lain yang nutup area notch (toolbar rekam layar dll.) */
-function start(cb, cover) {
+/** Baca kecerahan layar (0..100), atau null kalau nggak didukung (mis. monitor eksternal tanpa DDC/WMI). */
+function getBrightness() {
+  if (process.platform === 'win32') {
+    return new Promise((resolve) => {
+      const cmd = '(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1).CurrentBrightness';
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { windowsHide: true, timeout: 3000 }, (err, out) => {
+        if (err) return resolve(null);
+        const n = parseInt(String(out).trim(), 10);
+        resolve(Number.isFinite(n) && n >= 0 && n <= 100 ? n : null);
+      });
+    });
+  }
+  if (process.platform === 'linux') {
+    return (async () => {
+      try {
+        const dirs = await fs.promises.readdir('/sys/class/backlight');
+        if (!dirs.length) return null;
+        const base = path.join('/sys/class/backlight', dirs[0]);
+        const [cur, max] = await Promise.all([
+          fs.promises.readFile(path.join(base, 'brightness'), 'utf8'),
+          fs.promises.readFile(path.join(base, 'max_brightness'), 'utf8'),
+        ]);
+        const c = parseInt(cur.trim(), 10), m = parseInt(max.trim(), 10);
+        return m > 0 && Number.isFinite(c) ? Math.max(0, Math.min(100, Math.round((c / m) * 100))) : null;
+      } catch { return null; }
+    })();
+  }
+  return Promise.resolve(null);
+}
+
+/** cb(state audio), cover(bool): ada jendela lain yang nutup area notch (toolbar rekam layar dll.), extraCb: { onHud, onFullscreen } atau fn */
+function start(cb, cover, extraCb) {
   emit = cb;
   if (cover) onCover = cover;
+  if (extraCb) onExtra = extraCb;
   if (process.platform === 'win32') startWindows();
   else if (process.platform === 'linux') startLinux();
+  if (onExtra && !brightnessTimer) {
+    const pollBrightness = async () => {
+      if (brightnessBusy) return;
+      brightnessBusy = true;
+      try {
+        const b = await getBrightness();
+        if (typeof b === 'number') {
+          if (lastBrightness !== null && b !== lastBrightness) {
+            emitHud({ kind: 'brightness', value: b, level: b / 100 });
+          }
+          lastBrightness = b;
+        }
+      } finally {
+        brightnessBusy = false;
+      }
+    };
+    pollBrightness();
+    brightnessTimer = setInterval(pollBrightness, 2000);
+  }
 }
 
 /** level 0..1 */
@@ -275,4 +390,4 @@ function battery(name, done) {
   }
 }
 
-module.exports = { start, setVolume, setMute, battery };
+module.exports = { start, setVolume, setMute, battery, getBrightness };

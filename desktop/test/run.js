@@ -10,9 +10,11 @@ require('../app/lib/water.js');
 require('../app/lib/timer.js');
 require('../app/lib/tools.js');
 require('../app/lib/qr.js');
+require('../app/lib/lyrics.js');
+require('../app/lib/ical.js');
 const PhoneDrop = require('../phonedrop.js');
 
-const { Places, TaskParser, Water, TimerLib, Tools, QR } = globalThis;
+const { Places, TaskParser, Water, TimerLib, Tools, QR, Lyrics, ICal } = globalThis;
 
 let fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -245,6 +247,120 @@ ok('System.snapshot shape',
 ok('Privacy & Notifications modules export start/stop',
   typeof PrivacyMod.start === 'function' && typeof PrivacyMod.stop === 'function' &&
   typeof NotifMod.start === 'function' && typeof NotifMod.stop === 'function');
+
+// 8. Lyrics (LRC parser & activeLineIndex)
+{
+  const parsed = Lyrics.parseLRC('[ar:Artist]\n[00:12.50] line 1\n[01:05.00] line 2');
+  ok('Lyrics.parseLRC parses timestamps & ignores metadata tags',
+    Array.isArray(parsed) &&
+    parsed.length === 2 &&
+    approx(parsed[0].timeSec, 12.5) && parsed[0].text === 'line 1' &&
+    approx(parsed[1].timeSec, 65) && parsed[1].text === 'line 2');
+
+  const unsorted = Lyrics.parseLRC('[ti:Song]\n[01:05.00] line 2\n[00:12.50] line 1');
+  ok('Lyrics.parseLRC sorts lines chronologically',
+    unsorted.length === 2 &&
+    approx(unsorted[0].timeSec, 12.5) && unsorted[0].text === 'line 1' &&
+    approx(unsorted[1].timeSec, 65) && unsorted[1].text === 'line 2');
+
+  ok('Lyrics.activeLineIndex(lines, 13) === 0', Lyrics.activeLineIndex(parsed, 13) === 0);
+  ok('Lyrics.activeLineIndex(lines, 66) === 1', Lyrics.activeLineIndex(parsed, 66) === 1);
+  ok('Lyrics.activeLineIndex(lines, 5) === -1', Lyrics.activeLineIndex(parsed, 5) === -1);
+}
+
+// 9. ICal (.ics VEVENT parser)
+{
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'BEGIN:VEVENT',
+    'SUMMARY:Before Window',
+    'DTSTART:20261122T070000Z',
+    'DTEND:20261122T080000Z',
+    'END:VEVENT',
+    'BEGIN:VEVENT',
+    'SUMMARY:Design ',
+    ' Review',
+    'DTSTART:20261122T090000Z',
+    'DTEND:20261122T103000Z',
+    'END:VEVENT',
+    'BEGIN:VEVENT',
+    'SUMMARY:Standup',
+    'DTSTART:20261122T110000Z',
+    'DURATION:PT30M',
+    'END:VEVENT',
+    'BEGIN:VEVENT',
+    'SUMMARY:After Window',
+    'DTSTART:20261122T180000Z',
+    'DTEND:20261122T190000Z',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+
+  const fromMs = Date.UTC(2026, 10, 22, 8, 30, 0);
+  const toMs = Date.UTC(2026, 10, 22, 17, 0, 0);
+  const evs = ICal.parseICS(ics, fromMs, toMs);
+
+  ok('ICal.parseICS filters by [fromMs, toMs]', evs.length === 2);
+  ok('ICal.parseICS parses folded SUMMARY & DTEND',
+    evs[0] &&
+    evs[0].title === 'Design Review' &&
+    evs[0].start === Date.UTC(2026, 10, 22, 9, 0, 0) &&
+    evs[0].minutes === 90);
+  ok('ICal.parseICS parses DURATION',
+    evs[1] &&
+    evs[1].title === 'Standup' &&
+    evs[1].start === Date.UTC(2026, 10, 22, 11, 0, 0) &&
+    evs[1].minutes === 30);
+}
+
+// 10. Static UI/Settings verification against desktop/app/app.js & index.html
+{
+  const appJs = fs.readFileSync(appJsPath, 'utf8');
+  const html = fs.readFileSync(indexPath, 'utf8');
+
+  const expectedNav = [
+    'General',
+    'Display',
+    'Pages',
+    'Appearance',
+    'Music and lyrics',
+    'Notifications',
+    'Widgets',
+    'To-do',
+    'Pomodoro',
+    'Water',
+    'Shelf',
+    'HUD and popups',
+    'About',
+  ];
+
+  const navMatch = appJs.match(/const SETTINGS_NAV\s*=\s*\[([\s\S]*?)\];/);
+  const labels = [];
+  if (navMatch) {
+    const itemRe = /\[\s*'[^']+'\s*,\s*'([^']+)'/g;
+    let m;
+    while ((m = itemRe.exec(navMatch[1])) !== null) {
+      labels.push(m[1]);
+    }
+  }
+
+  ok('Settings sidebar has exact 13 categories in order',
+    labels.length === expectedNav.length &&
+    expectedNav.every((lbl, i) => labels[i] === lbl),
+    `got [${labels.join(', ')}]`);
+
+  ok('app.js & index.html have no Prayer/Quran/Ask Nusa/Translate',
+    !/\b(Prayer|Quran|Ask Nusa|Translate)\b/i.test(appJs) &&
+    !/\b(Prayer|Quran|Ask Nusa|Translate)\b/i.test(html));
+
+  ok('app.js & index.html have no PRO badge',
+    !/\bPRO\b/.test(appJs) && !/\bPRO\b/.test(html));
+
+  for (const required of ['Lyrics not available', 'Not Playing', 'Nusa mascot', 'Hide in full screen']) {
+    ok(`app.js contains "${required}"`, appJs.includes(required));
+  }
+}
 
 async function testPhoneDrop() {
   const tmpDownloads = fs.mkdtempSync(path.join(os.tmpdir(), 'nusa-test-pd-'));

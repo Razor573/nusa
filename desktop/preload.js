@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const ALLOWED_EVENTS = [
   'hover', 'media', 'clip', 'open-panel', 'audio', 'device', 'yield',
   'system', 'privacy', 'notif', 'phonedrop-request', 'phonedrop-files', 'phonedrop-state',
+  'hud', 'fullscreen',
 ];
 
 contextBridge.exposeInMainWorld('nusa', {
@@ -18,8 +19,12 @@ contextBridge.exposeInMainWorld('nusa', {
   loginItem: (on) => ipcRenderer.invoke('login-item', on),
   contextMenu: () => ipcRenderer.send('context-menu'),
   calendar: (start, days) => ipcRenderer.invoke('calendar', start, days),
+  weather: (lat, lon) => ipcRenderer.invoke('weather', lat, lon),
+  ical: (url) => ipcRenderer.invoke('ical', url),
   locate: () => ipcRenderer.invoke('locate'),
   calendarSettings: () => ipcRenderer.send('calendar-settings'),
+  setScale: (scale) => ipcRenderer.send('set-scale', scale),
+  relaunch: () => ipcRenderer.send('relaunch'),
   senandung: (method, route, body) => ipcRenderer.invoke('senandung', method, route, body),
   // File Shelf (Tray)
   filePath: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },

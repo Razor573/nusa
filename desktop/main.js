@@ -109,6 +109,9 @@ function create() {
       }
       send('yield', covered);
     }, covered ? 1200 : 1500);
+  }, {
+    onHud: (d) => send('hud', d),
+    onFullscreen: (fs) => send('fullscreen', fs),
   });
 }
 
@@ -138,6 +141,129 @@ ipcMain.on('mute', (_e, on) => audio.setMute(!!on));
 ipcMain.handle('calendar', (_e, start, days) => calendar.fetch(+start, Math.min(31, Math.max(1, +days || 7))));
 // Izin kalender diblokir: buka halaman Privasi › Kalender di Settings
 ipcMain.on('calendar-settings', () => shell.openExternal(process.platform === 'win32' ? 'ms-settings:privacy-calendar' : 'about:blank'));
+
+function metSymbolToWmo(sym) {
+  const base = String(sym || '').replace(/_(day|night|polartwilight)$/, '');
+  if (base.includes('thunder')) return 95;
+  const map = {
+    clearsky: 0, fair: 1, partlycloudy: 2, cloudy: 3, fog: 45,
+    lightrainshowers: 61, lightrain: 61,
+    rainshowers: 63, rain: 63,
+    heavyrainshowers: 65, heavyrain: 65,
+    lightsleet: 66, sleet: 66, heavysleet: 66,
+    lightsleetshowers: 66, sleetshowers: 66, heavysleetshowers: 66,
+    lightsnow: 71, lightsnowshowers: 71,
+    snow: 73, snowshowers: 73,
+    heavysnow: 75, heavysnowshowers: 75,
+  };
+  if (map[base] !== undefined) return map[base];
+  if (base.includes('snow')) return 71;
+  if (base.includes('rain')) return 63;
+  if (base.includes('cloud')) return 3;
+  return 2;
+}
+
+function apparentTemp(t, rh, windMs) {
+  if (typeof t !== 'number' || !Number.isFinite(t)) return t;
+  const h = typeof rh === 'number' && Number.isFinite(rh) ? rh : 50;
+  const w = typeof windMs === 'number' && Number.isFinite(windMs) ? windMs : 0;
+  const e = (h / 100) * 6.105 * Math.exp((17.27 * t) / (237.7 + t));
+  return Math.round((t + 0.33 * e - 0.70 * w - 4.0) * 10) / 10;
+}
+
+ipcMain.handle('weather', async (_e, lat, lon) => {
+  const la = +lat, lo = +lon;
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
+  try {
+    const url = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${la.toFixed(2)}&lon=${lo.toFixed(2)}`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Nusa/1.0.1 (https://github.com/Razor573/nusa)' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const series = data?.properties?.timeseries;
+      if (Array.isArray(series) && series.length) {
+        const cur = series[0];
+        const det = cur.data?.instant?.details || {};
+        const sym = cur.data?.next_1_hours?.summary?.symbol_code
+          || cur.data?.next_6_hours?.summary?.symbol_code || 'clearsky_day';
+        const temp = Math.round(det.air_temperature);
+        const feels = Math.round(apparentTemp(det.air_temperature, det.relative_humidity, det.wind_speed));
+        const hours = series.slice(1, 9).map((item) => {
+          const hSym = item.data?.next_1_hours?.summary?.symbol_code
+            || item.data?.next_6_hours?.summary?.symbol_code || sym;
+          return {
+            time: item.time,
+            temp: Math.round(item.data?.instant?.details?.air_temperature ?? temp),
+            rain: item.data?.next_1_hours?.details?.precipitation_amount ?? 0,
+            code: metSymbolToWmo(hSym),
+          };
+        });
+        return {
+          temp,
+          feels: Number.isFinite(feels) ? feels : temp,
+          code: metSymbolToWmo(sym),
+          day: !sym.endsWith('_night'),
+          hours,
+          source: 'met.no',
+        };
+      }
+    }
+  } catch {}
+
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}&current=temperature_2m,apparent_temperature,weather_code,is_day&hourly=temperature_2m,precipitation_probability,weather_code&forecast_hours=9&timezone=auto`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const c = data?.current;
+    if (!c) return null;
+    const h = data?.hourly || {};
+    const times = Array.isArray(h.time) ? h.time : [];
+    const hours = times.slice(1, 9).map((time, i) => ({
+      time,
+      temp: Math.round(h.temperature_2m?.[i + 1] ?? c.temperature_2m),
+      rain: h.precipitation_probability?.[i + 1] ?? 0,
+      code: h.weather_code?.[i + 1] ?? c.weather_code,
+    }));
+    return {
+      temp: Math.round(c.temperature_2m),
+      feels: Math.round(c.apparent_temperature ?? c.temperature_2m),
+      code: c.weather_code ?? 0,
+      day: c.is_day !== 0,
+      hours,
+      source: 'open-meteo',
+    };
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('ical', async (_e, url) => {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url.trim())) return null;
+  try {
+    const res = await fetch(url.trim(), { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const len = parseInt(res.headers.get('content-length') || '0', 10);
+    if (len > 2 * 1024 * 1024) return null;
+    const text = await res.text();
+    if (Buffer.byteLength(text, 'utf8') > 2 * 1024 * 1024) return null;
+    return text;
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.on('set-scale', (_e, scale) => {
+  const s = Math.max(0.75, Math.min(1.5, +scale || 1));
+  if (win && !win.isDestroyed()) win.webContents.setZoomFactor(s);
+});
+
+ipcMain.on('relaunch', () => {
+  app.relaunch();
+  app.exit(0);
+});
 
 /* Sampul resolusi tinggi lewat iTunes Search (gratis, tanpa login). Yang dikirim cuma judul + artis. */
 const hiRes = new Map();

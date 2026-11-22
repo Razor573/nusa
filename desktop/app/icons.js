@@ -69,5 +69,17 @@
     cam: s('<rect x="3" y="6.5" width="12.5" height="11" rx="2.2"/><path d="M15.5 10.5l5-3v9l-5-3z"/>'),
     bellOff: s('<path d="M6 16.5V11a6 6 0 0 1 10.2-4.2M18 11v5.5l1.5 1.5h-15M10 20.5a2.2 2.2 0 0 0 4 0M3.5 3.5l17 17"/>'),
     undo: s('<path d="M4.5 9.5H14a5.5 5.5 0 1 1 0 11h-3"/><path d="M8 6L4.5 9.5 8 13"/>'),
+    lyrics: s('<path d="M4 6.5a2.5 2.5 0 0 1 2.5-2.5h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H9.5L5 20.5v-3.5A2.5 2.5 0 0 1 4 14.5z"/><path d="M8 8.5h8M8 12h5"/>'),
+    list: s('<path d="M8.5 6.5h11M8.5 12h11M8.5 17.5h11"/><circle cx="4.5" cy="6.5" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="17.5" r="1" fill="currentColor" stroke="none"/>'),
+    brightness: s('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>'),
+    capslock: s('<path d="M12 4l7 7h-4v5H9v-5H5z"/><path d="M9 19.5h6"/>'),
+    widgets: s('<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="2"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="2"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="2"/><rect x="13" y="13" width="7.5" height="7.5" rx="2"/>'),
+    info: s('<circle cx="12" cy="12" r="9"/><path d="M12 11.5v5"/><circle cx="12" cy="8" r="0.8" fill="currentColor" stroke="none"/>'),
+    restart: s('<path d="M4 12a8 8 0 1 1 2.3 5.6"/><path d="M4 17v-5h5"/>'),
+    chevronRight: s('<path d="M9.5 6.5l5.5 5.5-5.5 5.5"/>'),
+    display: s('<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>'),
+    pages: s('<rect x="4" y="4.5" width="16" height="15" rx="2.2"/><path d="M9 4.5v15"/>'),
+    hud: s('<rect x="3.5" y="6.5" width="17" height="11" rx="5.5"/><circle cx="15" cy="12" r="2.2" fill="currentColor" stroke="none"/>'),
+    note: s('<path d="M9 17.5V6.5l10-2v11"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>'),
   };
 })();
