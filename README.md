@@ -13,7 +13,7 @@ Click it, and it unfolds into a full panel. Free, no account, no ads.
 [![GitHub stars](https://img.shields.io/github/stars/Hiroyki/nusa?style=flat-square&color=5cdba8&logo=github)](https://github.com/Hiroyki/nusa/stargazers)
 [![Downloads](https://img.shields.io/github/downloads/Hiroyki/nusa/total?style=flat-square&color=5cdba8)](https://github.com/Hiroyki/nusa/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5cdba8?style=flat-square)](#-install)
-[![Latest release](https://img.shields.io/badge/release-v1.0.1-5cdba8?style=flat-square)](https://github.com/Hiroyki/nusa/releases/latest)
+[![Latest release](https://img.shields.io/badge/release-v1.0.2-5cdba8?style=flat-square)](https://github.com/Hiroyki/nusa/releases/latest)
 [![macOS · SwiftUI](https://img.shields.io/badge/macOS-SwiftUI-000000?style=flat-square&logo=apple&logoColor=white)](#-tech-stack)
 [![Desktop · Electron](https://img.shields.io/badge/desktop-Electron-47848F?style=flat-square&logo=electron&logoColor=white)](#-tech-stack)
 

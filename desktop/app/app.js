@@ -69,6 +69,7 @@ const DEFAULT_CFG = {
   statusMetric: 'auto',
   privacyDots: false,
   lyricsEnabled: true,
+  closedLyrics: true,
   eqEnabled: true,
   hiResArt: true,
   clipsEnabled: false,
@@ -233,7 +234,7 @@ function size(p = presentation()) {
       const w = Math.max(96, 36 + dtW + mascW + sysW + dotsW);
       return { w, h: 28, r: 14, s: 8 };
     }
-    case 'music': return { w: Math.min(340, 210 + (S.timer ? 24 : 0) + mascW + dotsW), h: 28, r: 14, s: 8 };
+    case 'music': return { w: 280 + (S.timer ? 24 : 0) + mascW + dotsW, h: 28, r: 14, s: 8 };
     case 'timer': return { w: 186 + dotsW, h: 28, r: 14, s: 8 };
     case 'focus': return { w: 236 + dotsW, h: 28, r: 14, s: 8 };
     case 'flash': {
@@ -313,6 +314,15 @@ function mascotHTML() {
   return S.cfg.mascot ? `<span class="mascot" aria-hidden="true"><i></i><i></i></span>` : '';
 }
 
+function closedMusicText(media = S.media, lyricsState = S.lyricsState, posSec = (S.scrub ?? mediaPos()), cfg = S.cfg) {
+  if (!media?.title) return 'Not Playing';
+  if (media.playing && cfg?.lyricsEnabled !== false && cfg?.closedLyrics !== false && Array.isArray(lyricsState?.lines) && lyricsState.lines.length > 0 && typeof Lyrics !== 'undefined') {
+    const idx = Lyrics.activeLineIndex(lyricsState.lines, posSec);
+    if (idx >= 0 && lyricsState.lines[idx]?.text) return lyricsState.lines[idx].text;
+  }
+  return media.title;
+}
+
 function build(p) {
   if (p === 'lip') return '';
   if (p === 'flash') return flashHTML(S.flash);
@@ -321,7 +331,7 @@ function build(p) {
   const masc = mascotHTML();
   if (p === 'music') {
     const m = S.media;
-    return `${statusRingHTML()}${m.art ? `<img class="art" src="${esc(m.art)}" alt="">` : ''}<span class="t">${esc(m.title)}</span>
+    return `<span class="closed-note">${IC.note}</span><span class="t closed-lyric" data-live="closedMusicText">${esc(closedMusicText())}</span>
       ${S.cfg.eqEnabled ? `<span class="eq ${m.playing ? 'on' : ''}"><i></i><i></i><i></i><i></i></span>` : ''}${S.timer ? ringSVG('timer') : ''}${masc}${dots}`;
   }
   if (p === 'timer') return `${statusRingHTML()}${IC.timer}<span class="t">Timer</span><span class="mono" style="color:#ff9f0a" data-live="timerLeft"></span>${dots}`;
@@ -555,6 +565,7 @@ async function ensureLyrics() {
   }
   const again = $('#lyricsPane');
   if (again) again.innerHTML = lyricsPaneHTML();
+  live();
 }
 
 function updateActiveLyric() {
@@ -1116,6 +1127,7 @@ function settingsPageHTML(cat) {
         <h2 class="set-title">Music and lyrics</h2>
         <div class="set-sec">Lyrics</div>
         ${card('Synced lyrics (LRCLIB)', 'Fetch time-synced lyrics for the playing track', sw('lyricsEnabled', S.cfg.lyricsEnabled))}
+        ${card('Show live lyrics in closed notch', 'Show the current synced lyric line in the collapsed notch while music plays', sw('closedLyrics', S.cfg.closedLyrics !== false))}
         <div class="set-sec">Player</div>
         ${card('Live equalizer', 'Animated bars in the notch while music plays', sw('eqEnabled', S.cfg.eqEnabled))}
         ${card('High-resolution art', 'Use full cover art when available from the player', sw('hiResArt', S.cfg.hiResArt))}`;
@@ -1199,7 +1211,7 @@ function settingsPageHTML(cat) {
     case 'about':
       return `
         <h2 class="set-title">About</h2>
-        ${card('Nusa', 'Version 1.0.1 · MIT License · Local-first desktop notch', `<span class="chip">v1.0.1</span>`)}
+        ${card('Nusa', 'Version 1.0.2 · MIT License · Local-first desktop notch', `<span class="chip">v1.0.2</span>`)}
         ${card('Privacy', 'No telemetry, no cloud account, and all watchers are opt-in', `<span style="color:#22c55e;font-size:12px">Local-only</span>`)}
         ${card('Quit Nusa', 'Close the desktop notch application', `<button class="btn-dark danger" data-act="quit">Quit Nusa</button>`)}`;
   }
@@ -1393,6 +1405,7 @@ function checkTasks() {
 /* ================= Live 1s Updates ================= */
 const LIVE = {
   closedDt: () => fmtDateTime(),
+  closedMusicText: () => esc(closedMusicText()),
   sysClosed: () => S.sys ? `${S.sys.cpu}% · ↓${fmtSpeed(S.sys.net.downBps)}` : '',
   timerLeft: () => S.timer ? clock((S.timer.end - Date.now()) / 1000 + 0.999) : '',
   focusLeft: () => S.focus ? clock((S.focus.end - Date.now()) / 1000 + 0.999) : '',
@@ -1428,7 +1441,7 @@ function live() {
 }
 
 /* ================= IPC Events ================= */
-let closeTimer = null;
+let closeTimer = null, openTimer = null;
 nusa.on('yield', (on) => {
   S.yielded = on;
   if (on) { S.hover = false; if (!S.pinned) S.expanded = false; }
@@ -1444,7 +1457,12 @@ nusa.on('fullscreen', (on) => {
 nusa.on('hover', (over) => {
   S.hover = over;
   clearTimeout(closeTimer);
-  if (!over && S.expanded && !S.pinned) closeTimer = setTimeout(() => { S.expanded = false; render(); }, 250);
+  clearTimeout(openTimer);
+  if (over && !S.expanded && !S.flash) {
+    openTimer = setTimeout(() => { if (S.hover && !S.expanded && !S.flash) { S.expanded = true; render(true); } }, 180);
+  } else if (!over && S.expanded && !S.pinned) {
+    closeTimer = setTimeout(() => { S.expanded = false; render(); }, 250);
+  }
   render();
 });
 
@@ -1459,7 +1477,7 @@ nusa.on('media', (st) => {
   if (!st?.art) S.tint = null;
   const newTrack = before?.title && st?.title && st.title !== before.title && st.playing;
   const changed = mediaSig(before) !== mediaSig(st);
-  if (changed && S.lyricsOpen) ensureLyrics();
+  if (changed && (S.lyricsOpen || (S.cfg.lyricsEnabled && S.cfg.closedLyrics !== false))) ensureLyrics();
   if (newTrack && !S.expanded && S.focus?.phase !== 'focus') showFlash({ kind: 'track' }, 2.6);
   else if (changed && S.expanded && S.tab === 'music') render(true);
   else render(changed);
@@ -1713,7 +1731,12 @@ document.addEventListener('click', (e) => {
     login: async () => { S.loginAtBoot = await nusa.loginItem(!S.loginAtBoot); render(true); },
     quit: () => window.close(),
     relaunch: () => nusa.relaunch?.(),
-    cfgToggle: () => { S.cfg[d.k] = !S.cfg[d.k]; saveCfg(); render(true); },
+    cfgToggle: () => {
+      S.cfg[d.k] = !S.cfg[d.k];
+      if ((d.k === 'closedLyrics' || d.k === 'lyricsEnabled') && S.cfg.lyricsEnabled && S.cfg.closedLyrics !== false) ensureLyrics();
+      saveCfg();
+      render(true);
+    },
     pageToggle: () => { S.cfg.pages[d.k] = !(S.cfg.pages[d.k] !== false); saveCfg(); render(true); },
     setNotchSize: () => { S.cfg.notchSize = d.v; saveCfg(); render(true); },
     setNotchStyle: () => { S.cfg.notchStyle = d.v; saveCfg(); render(true); },
@@ -1824,7 +1847,8 @@ syncWatchers();
 loadShelf();
 loadCalendar();
 setInterval(loadCalendar, 5 * 60000);
-setInterval(() => { live(); checkTimers(); }, 1000);
+setInterval(live, 250);
+setInterval(checkTimers, 1000);
 setInterval(checkWater, 60000);
 setTimeout(() => { checkTasks(); setInterval(checkTasks, 10000); }, 3000);
 setInterval(loadWeather, 15 * 60000);
@@ -1833,4 +1857,4 @@ locateUser();
 setInterval(locateUser, 30 * 60000);
 render(true);
 
-window.__nusa = { S, render, showFlash, startFocus, applyTheme, BUILTIN_THEMES };
+window.__nusa = { S, render, showFlash, startFocus, applyTheme, BUILTIN_THEMES, closedMusicText };

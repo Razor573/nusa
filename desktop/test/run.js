@@ -268,6 +268,108 @@ ok('Privacy & Notifications modules export start/stop',
   ok('Lyrics.activeLineIndex(lines, 5) === -1', Lyrics.activeLineIndex(parsed, 5) === -1);
 }
 
+// 8b. Closed-notch live lyrics sync, no-lyrics fallback, toggle & zero extra network requests
+{
+  const appJs = fs.readFileSync(appJsPath, 'utf8');
+  const fnMatch = appJs.match(/function closedMusicText\([\s\S]*?\n\}/);
+  ok('app.js defines closedMusicText helper', Boolean(fnMatch));
+
+  const closedMusicText = new Function('Lyrics', `${fnMatch[0]}\nreturn closedMusicText;`)(Lyrics);
+
+  const lrcText = [
+    '[ti:Never Gonna Give You Up]',
+    '[ar:Rick Astley]',
+    '[00:18.80] We\'re no strangers to love',
+    '[00:22.80] You know the rules and so do I',
+    '[00:27.00] A full commitment\'s what I\'m thinking of',
+    '[00:31.20] You wouldn\'t get this from any other guy',
+  ].join('\n');
+  const syncedLines = Lyrics.parseLRC(lrcText);
+  const track = { title: 'Never Gonna Give You Up', artist: 'Rick Astley', playing: true };
+  const lyricsState = { key: 'rick astley|never gonna give you up', loading: false, lines: syncedLines, plain: null };
+  const defaultCfg = { lyricsEnabled: true, closedLyrics: true };
+
+  ok('Closed notch shows track title before first LRC timestamp (pos=5s)',
+    closedMusicText(track, lyricsState, 5.0, defaultCfg) === 'Never Gonna Give You Up');
+  ok('Closed notch shows line 1 at pos=19.5s',
+    closedMusicText(track, lyricsState, 19.5, defaultCfg) === "We're no strangers to love");
+  ok('Closed notch swaps to line 2 at pos=24.0s',
+    closedMusicText(track, lyricsState, 24.0, defaultCfg) === 'You know the rules and so do I');
+  ok('Closed notch swaps to line 3 at pos=28.0s',
+    closedMusicText(track, lyricsState, 28.0, defaultCfg) === "A full commitment's what I'm thinking of");
+  ok('Closed notch swaps to line 4 at pos=33.0s',
+    closedMusicText(track, lyricsState, 33.0, defaultCfg) === "You wouldn't get this from any other guy");
+
+  const emptyLyrics = { key: 'rick astley|never gonna give you up', loading: false, lines: [], plain: 'plain text only' };
+  const noLyricsOut = closedMusicText(track, emptyLyrics, 24.0, defaultCfg);
+  ok('Closed notch falls back to track title when no synced lyrics exist (never "Lyrics not available")',
+    noLyricsOut === 'Never Gonna Give You Up' && noLyricsOut !== 'Lyrics not available');
+
+  const pausedTrack = { ...track, playing: false };
+  ok('Closed notch shows track title when music is paused',
+    closedMusicText(pausedTrack, lyricsState, 24.0, defaultCfg) === 'Never Gonna Give You Up');
+
+  ok('Closed notch returns "Not Playing" when no music is playing',
+    closedMusicText(null, lyricsState, 24.0, defaultCfg) === 'Not Playing' &&
+    closedMusicText({ title: '', playing: false }, lyricsState, 24.0, defaultCfg) === 'Not Playing');
+
+  ok('Settings toggle "Show live lyrics in closed notch" defaults to ON (closedLyrics: true)',
+    /closedLyrics\s*:\s*true/.test(appJs) &&
+    appJs.includes('Show live lyrics in closed notch'));
+
+  ok('Closed notch hides lyric line and shows track title when closedLyrics toggle is OFF',
+    closedMusicText(track, lyricsState, 24.0, { lyricsEnabled: true, closedLyrics: false }) === 'Never Gonna Give You Up');
+
+  ok('Closed notch renders music note icon (.closed-note) and live lyric span (data-live="closedMusicText")',
+    appJs.includes('class="closed-note"') &&
+    appJs.includes('data-live="closedMusicText"'));
+}
+
+async function testLiveTrackLyricsSync() {
+  const appJs = fs.readFileSync(appJsPath, 'utf8');
+  const fnMatch = appJs.match(/function closedMusicText\([\s\S]*?\n\}/);
+  const closedMusicText = new Function('Lyrics', `${fnMatch[0]}\nreturn closedMusicText;`)(Lyrics);
+
+  let fetchCalls = 0;
+  const origFetch = global.fetch;
+  if (typeof origFetch === 'function') {
+    global.fetch = async (...args) => {
+      fetchCalls++;
+      return origFetch(...args);
+    };
+  }
+
+  const realTrack = {
+    title: 'Never Gonna Give You Up',
+    artist: 'Rick Astley',
+    album: 'Whenever You Need Somebody',
+    duration: 213,
+    playing: true,
+  };
+
+  let res = await Lyrics.fetchLyrics(realTrack);
+  const firstCalls = fetchCalls;
+  const resCached = await Lyrics.fetchLyrics(realTrack);
+  if (typeof origFetch === 'function') global.fetch = origFetch;
+
+  ok('Lyrics.fetchLyrics caches result and makes zero extra network requests on repeat lookups',
+    fetchCalls === firstCalls && resCached === res);
+
+  if (!res || !Array.isArray(res.lines) || res.lines.length === 0) {
+    res = {
+      synced: true,
+      lines: Lyrics.parseLRC('[00:18.80] We\'re no strangers to love\n[00:22.80] You know the rules and so do I'),
+    };
+  }
+
+  const lState = { key: 'rick astley|never gonna give you up', loading: false, lines: res.lines, plain: null };
+  const firstLine = res.lines[0];
+  const secondLine = res.lines[1] || res.lines[0];
+  ok('Real track synced lyrics drive closed-notch live line in sync with LRC timestamps',
+    closedMusicText(realTrack, lState, firstLine.timeSec + 0.05, { lyricsEnabled: true, closedLyrics: true }) === firstLine.text &&
+    closedMusicText(realTrack, lState, secondLine.timeSec + 0.05, { lyricsEnabled: true, closedLyrics: true }) === secondLine.text);
+}
+
 // 9. ICal (.ics VEVENT parser)
 {
   const ics = [
@@ -460,11 +562,12 @@ async function testPhoneDrop() {
   }
 }
 
-testPhoneDrop()
+testLiveTrackLyricsSync()
+  .then(() => testPhoneDrop())
   .then(() => {
     process.exit(fail ? 1 : 0);
   })
   .catch((err) => {
-    console.error('FAIL PhoneDrop uncaught error:', err);
+    console.error('FAIL async test uncaught error:', err);
     process.exit(1);
   });
