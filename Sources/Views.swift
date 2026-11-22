@@ -117,7 +117,6 @@ struct IslandView: View {
         .offset(x: model.nudge)
         .animation(.spring(response: 0.26, dampingFraction: 0.5), value: model.nudge)
         .onTapGesture {
-            if case .prayer = model.flash { return model.dismissPrayer() }
             if case .task = model.flash {
                 model.flash = nil
                 model.tab = .tasks
@@ -140,7 +139,6 @@ struct IslandView: View {
         case .music: CompactMusic(model: model)
         case .timer: CompactTimer(model: model)
         case .flash(.track): TrackPopup(model: model)
-        case .flash(.prayer(let name, let time, let soon)): PrayerPopup(name: name, time: time, soon: soon)
         case .flash(.task(let id, let title, let time)): TaskPopup(id: id, title: title, time: time, model: model)
         case .flash(.rain(let time, let chance)): RainPopup(time: time, chance: chance)
         case .flash(.charging(let percent, true)): ChargingPopup(percent: percent, minutesToFull: model.minutesToFull)
@@ -372,7 +370,7 @@ private struct FlashView: View {
 
     var body: some View {
         switch flash {
-        case .track, .prayer, .task, .rain, .focusEnd, .device:
+        case .track, .task, .rain, .focusEnd, .device:
             EmptyView()
         case .charging(let percent, let on):
             row(symbol: on ? "bolt.fill" : "powerplug", tint: on ? .green : dim,

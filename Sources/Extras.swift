@@ -49,13 +49,13 @@ struct ChargingPopup: View {
     }
 }
 
-// MARK: - Notch kosong: gantian cuaca, jam, sholat berikutnya
+// MARK: - Notch kosong: gantian cuaca dan jam
 
 struct IdleCarousel: View {
     @ObservedObject var model: IslandModel
     @ObservedObject private var w = WeatherStore.shared
 
-    private enum Item: Hashable { case weather, clock, prayer }
+    private enum Item: Hashable { case weather, clock }
 
     var body: some View {
         // MacBook ber-notch: pas diem island cuma seukuran notch kamera (nyaru), isinya muncul pas di-hover
@@ -63,7 +63,7 @@ struct IdleCarousel: View {
             Color.clear
         } else {
             TimelineView(.periodic(from: .now, by: 5)) { ctx in
-                let items: [Item] = (w.temp != nil ? [.weather] : []) + [.clock, .prayer]
+                let items: [Item] = (w.temp != nil ? [.weather] : []) + [.clock]
                 let item = items[Int(ctx.date.timeIntervalSince1970 / 5) % items.count]
                 content(item, now: ctx.date)
                     .id(item)
@@ -102,8 +102,6 @@ struct IdleCarousel: View {
             Image(systemName: WeatherStore.symbol(w.code, day: w.isDay)).symbolRenderingMode(.multicolor).font(.system(size: 11))
         case .clock:
             Image(systemName: "clock").font(.system(size: 10, weight: .semibold)).foregroundStyle(dim)
-        case .prayer:
-            Image(systemName: "moon.stars.fill").font(.system(size: 10)).foregroundStyle(Color(red: 0.36, green: 0.86, blue: 0.66))
         }
     }
 
@@ -113,9 +111,6 @@ struct IdleCarousel: View {
             Text("\(Int((w.temp ?? 0).rounded()))°").monospacedDigit()
         case .clock:
             Text(now, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute()).monospacedDigit()
-        case .prayer:
-            let next = model.prayers.next(after: now)
-            Text("\(next.name.title) \(prayerClock(next.date, model.prayers.place.timeZone))").monospacedDigit().fixedSize()
         }
     }
 }

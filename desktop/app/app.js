@@ -1,4 +1,4 @@
-// Nusa untuk Windows & Linux. Logikanya ngikutin versi Mac (Sources/*.swift).
+// Nusa for Windows & Linux.
 'use strict';
 
 const CANVAS_W = 840;
@@ -11,18 +11,19 @@ const LS = {
 const pad = (n) => String(n).padStart(2, '0');
 const clock = (sec) => { const s = Math.max(0, Math.floor(sec)); return s >= 3600 ? `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}` : `${Math.floor(s / 60)}:${pad(s % 60)}`; };
 const hhmm = (d, tz) => new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(tz ? { timeZone: tz } : {}) }).format(d);
+const mins = (ms) => { const m = Math.ceil(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)} hr ${m % 60} min` : `${m} min`; };
 const isWin = window.nusa?.platform === 'win32';
+const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+const localDateStr = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const fmtBytes = (b) => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(0)} MB` : b >= 1e3 ? `${(b / 1e3).toFixed(0)} KB` : `${b} B`;
+const fmtSpeed = (bps) => bps >= 1e6 ? `${(bps / 1e6).toFixed(1)} MB/s` : bps >= 1e3 ? `${(bps / 1e3).toFixed(0)} KB/s` : `${bps} B/s`;
 
-/* ================= tema ================= */
-// Tema bawaan doang — nggak ada impor/kustom dari file. Tiap tema cuma nimpa CSS variable.
+/* ================= Theme ================= */
 let appliedVars = [];
 const shade = (a) => `rgba(255,255,255,${a})`;
-// Palet lengkap per tema: bg, text, mint (aksen utama), green, rest (hangat), late (peringatan).
-// Permukaan (dim/faint/line/chip/chip2) diturunin dari putih, tapi bisa ditimpa per tema.
 const T = (id, name, c) => ({ id, name, colors: { dim: shade(.62), faint: shade(.42), line: shade(.12), chip: shade(.09), chip2: shade(.16), ...c } });
 const BUILTIN_THEMES = [
   { id: 'classic', name: 'Classic', colors: {} },
-  // Palet gelap pilihan, diadaptasi dari skema terkenal biar warnanya enak & kebaca.
   T('midnight', 'Midnight', { bg: '#0a0f1c', text: '#eaeefb', mint: '#6ea8fe', green: '#4de2c0', rest: '#a5b4fc', late: '#fb7185' }),
   T('tokyo', 'Tokyo Night', { bg: '#1a1b26', text: '#c0caf5', mint: '#7aa2f7', green: '#9ece6a', rest: '#e0af68', late: '#f7768e' }),
   T('nord', 'Nord', { bg: '#2e3440', text: '#eceff4', mint: '#88c0d0', green: '#a3be8c', rest: '#ebcb8b', late: '#bf616a' }),
@@ -36,37 +37,97 @@ const BUILTIN_THEMES = [
 ];
 const themeById = (id) => BUILTIN_THEMES.find((t) => t.id === id) || BUILTIN_THEMES[0];
 
-/** Suntik warna tema ke CSS variable di :root. Tema "classic" = nggak nimpa apa-apa (pakai default CSS). */
 function applyTheme() {
   const t = themeById(S.theme), root = document.documentElement.style;
   for (const k of appliedVars) root.removeProperty(k);
   appliedVars = [];
   for (const [k, v] of Object.entries(t.colors || {})) { root.setProperty('--' + k, v); appliedVars.push('--' + k); }
 }
-// Lokasi: default ikut lokasi user (LS city = 'auto'); hasil deteksi terakhir disimpen biar pas nyala langsung kepake
+
+/* ================= Config & State ================= */
+const DEFAULT_CFG = {
+  clipsEnabled: false,
+  clipsMode: 'text',
+  notifEnabled: false,
+  notifBody: true,
+  notifMuted: [],
+  privacyDots: false,
+  sysEnabled: false,
+  sysNotch: false,
+  tabs: { water: true, timer: true, tools: true, system: false },
+};
+const loadCfg = () => {
+  const saved = LS.get('cfg', {});
+  return { ...DEFAULT_CFG, ...saved, tabs: { ...DEFAULT_CFG.tabs, ...(saved.tabs || {}) } };
+};
+
 const AUTO_PLACE = LS.get('city', 'auto') === 'auto';
 const startPlace = () => {
-  if (!AUTO_PLACE) return Prayer.city(LS.get('city'));
+  if (!AUTO_PLACE) return Places.city(LS.get('city'));
   const last = LS.get('autoPlace', null);
-  return last ? Prayer.place(last) : Prayer.city('Jakarta');
+  return last ? Places.place(last) : Places.city('Jakarta');
 };
+
+const loadWater = () => {
+  const saved = LS.get('water', null);
+  const today = localDateStr();
+  if (saved && saved.date === today) return saved;
+  return Water.createState(today, saved || Water.DEFAULT_CONFIG);
+};
+
 const S = {
-  hover: false, expanded: false, pinned: false, tab: LS.get('tab', 'home'), flash: null,
+  hover: false, expanded: false, pinned: false, settingsOpen: false,
+  tab: LS.get('tab', 'home'), flash: null,
+  cfg: loadCfg(),
   media: null, tint: null, weather: null, battery: null,
-  timer: null, focus: null, clips: [], tasks: LS.get('tasks', []),
-  place: startPlace(), autoPlace: AUTO_PLACE, locating: false, sound: LS.get('sound', 'adzan'), soon: LS.get('soon', true),
-  q: { book: null, surah: LS.get('qSurah', 1), mark: LS.get('qMark', null), english: LS.get('qEnglish', false), font: LS.get('qFont', 'Scheherazade New') },
-  reciting: null, music: { queue: [], idx: -1, playing: false, online: false, query: '', results: [], searching: false },
-  menu: null, taskText: '', taskPick: null,
-  // Samain versi Mac: volume sistem, Rak (Tray), kalender hari, cermin kamera, geser posisi lagu
-  audio: null, shelf: LS.get('shelf', []), files: {}, dropping: false, calSel: null, mirror: null, scrub: null,
+  timer: null, focus: null,
+  clips: [], pinnedClips: LS.get('pinnedClips', []), clipQuery: '', clipSnippet: '', copied: null,
+  tasks: LS.get('tasks', []), taskText: '', taskPick: null,
+  place: startPlace(), autoPlace: AUTO_PLACE, locating: false,
+  music: { queue: [], idx: -1, playing: false, online: false, query: '', results: [], searching: false },
+  menu: null,
+  audio: null, shelf: LS.get('shelf', []), shelfNotes: LS.get('shelfNotes', []), shelfSel: [], noteText: '',
+  files: {}, dropping: false, calSel: null, mirror: null, scrub: null,
   cal: { status: 'loading', events: [], at: 0 },
   theme: LS.get('theme', 'classic'),
+  // New feature state
+  phoneDrop: { active: false, url: null },
+  water: loadWater(), waterCfgOpen: false, waterRefill: false,
+  timerMode: 'countdown',
+  cd: TimerLib.createCountdown(5),
+  sw: TimerLib.createStopwatch(),
+  pomo: TimerLib.createPomodoro(),
+  sys: null, sysHist: [],
+  privacy: { mic: { active: false, app: null }, cam: { active: false, app: null } },
+  toolsSub: 'color',
+  colorHex: '#5cdba8', colorHist: LS.get('colorHist', ['#5cdba8', '#6ea8fe', '#ffb85a']),
+  calcExpr: '', calcHist: LS.get('calcHist', []),
+  qrText: '',
+  convCat: 'length', convVal: '1', convFrom: 'km', convTo: 'm', tzOffset: 0,
+  loginAtBoot: false,
 };
 let flashTimer = null;
 
-/* ================= ukuran & bentuk ================= */
+function saveCfg() {
+  LS.set('cfg', S.cfg);
+  syncWatchers();
+}
 
+function syncWatchers() {
+  nusa.clipsConfig?.({ enabled: S.cfg.clipsEnabled, mode: S.cfg.clipsMode });
+  nusa.privacyWatch?.(S.cfg.privacyDots);
+  nusa.notifWatch?.(S.cfg.notifEnabled);
+  syncSystemWatch();
+}
+
+function syncSystemWatch() {
+  nusa.systemWatch?.({
+    notch: Boolean(S.cfg.sysNotch),
+    tab: Boolean(S.expanded && !S.settingsOpen && S.tab === 'system'),
+  });
+}
+
+/* ================= Presentation & Sizing ================= */
 function presentation() {
   if (S.expanded) return 'expanded';
   if (S.flash) return 'flash';
@@ -77,26 +138,29 @@ function presentation() {
   return 'idle';
 }
 
-const panelHeight = () => ({ prayer: 204, quran: 400, music: 330, tasks: 330 }[S.tab] || 190);
+const panelHeight = () => {
+  if (S.settingsOpen) return 340;
+  return ({ music: 330, tasks: 330, tray: 215, clips: 235, water: 245, timer: 270, tools: 285, system: 245 }[S.tab] || 195);
+};
 
 function size(p = presentation()) {
   const bump = 12;
   const c = (w) => ({ w: w + bump, h: 24, r: 9, s: 7 });
+  const dotsW = S.cfg.privacyDots && (S.privacy.mic.active || S.privacy.cam.active) ? 20 : 0;
   switch (p) {
     case 'lip': return { w: 150, h: 6, r: 3, s: 3 };
-    case 'idle': return c(150);
-    case 'music': return c(S.timer ? 268 : 248);
-    case 'timer': return c(168);
-    case 'focus': return c(250);
+    case 'idle': return c((S.cfg.sysNotch && S.sys ? 176 : 150) + dotsW);
+    case 'music': return c((S.timer ? 268 : 248) + dotsW);
+    case 'timer': return c(168 + dotsW);
+    case 'focus': return c(250 + dotsW);
     case 'flash': {
       const k = S.flash.kind;
       if (SMALL_FLASH.includes(k)) return { w: 232, h: 24, r: 9, s: 7 };
-      const w = { track: 318, prayer: 318, task: 340, rain: 318, focusEnd: 360, charging: 300, device: 330 }[k] || 300;
-      return { w, h: k === 'charging' ? 58 : 60, r: 20, s: 10 };
+      const w = { track: 318, task: 340, rain: 318, focusEnd: 360, charging: 300, device: 330, phoneDrop: 360, waterRemind: 340, timerDone: 330, notif: 360, privacy: 300 }[k] || 300;
+      return { w, h: k === 'charging' ? 58 : 62, r: 20, s: 10 };
     }
     default: {
       const h = panelHeight();
-      // Dropdown yang kebuka: panel memanjang sementara biar pilihannya nggak kepotong (jendela tingginya 440)
       const need = S.menu?.h ? Math.min(424, S.menu.y + S.menu.h + 14) : 0;
       return { w: 760, h: Math.max(h, need), r: 26, s: 14 };
     }
@@ -112,65 +176,65 @@ function render(force) {
   island.classList.toggle('closing', sz.h < lastH);
   lastH = sz.h;
   for (const [k, v] of Object.entries(sz)) island.style.setProperty('--' + k, v + 'px');
-  // Isi panel tetap setinggi aslinya; ruang tambahan cuma buat dropdown
   island.style.setProperty('--ph', panelHeight() + 'px');
   island.classList.toggle('big', p === 'expanded' || p === 'flash');
   island.dataset.mode = p;
-  // Latar panel Home ikut warna sampul, tipis aja
-  const tinted = p === 'expanded' && (S.tab === 'home' || (S.tab === 'music' && !S.music.online)) && S.media?.title && S.tint;
+  const tinted = p === 'expanded' && !S.settingsOpen && (S.tab === 'home' || (S.tab === 'music' && !S.music.online)) && S.media?.title && S.tint;
   island.classList.toggle('tinted', !!tinted);
   if (S.tint) {
     island.style.setProperty('--tint', S.tint);
     $('.tint', island).style.background = `linear-gradient(135deg, ${S.tint}38, ${S.tint}0d 45%, transparent 75%)`;
   }
-  const key = p === 'expanded' ? 'x:' + S.tab : p === 'flash' ? 'f:' + S.flash.kind + S.flash.id : p;
+  const key = p === 'expanded' ? (S.settingsOpen ? 'x:settings' : 'x:' + S.tab) : p === 'flash' ? 'f:' + S.flash.kind + S.flash.id : p;
   if (force || key !== lastKey) {
-    // Animasi masuk cuma pas pindah mode/tab. Bangun ulang di tab yang sama (mute, kalender, Rak, dll.)
-    // tanpa animasi; kalau diputar ulang tiap kali, panel kelihatan kedip.
     const enter = key !== lastKey;
-    const scroller = enter ? null : $('#content .scroll, #content .cards, #content .shelf');
+    const scroller = enter ? null : $('#content .scroll, #content .cards, #content .shelf, #content .set-grid');
     const keep = scroller ? scroller.scrollTop || scroller.scrollLeft : 0;
     lastKey = key;
     $('#content').innerHTML = `<div class="view ${viewClass(p)}${enter ? ' enter' : ''}">${build(p)}</div>`;
-    const again = scroller && $('#content .scroll, #content .cards, #content .shelf');
+    const again = scroller && $('#content .scroll, #content .cards, #content .shelf, #content .set-grid');
     if (again && keep) { if (again.scrollHeight > again.clientHeight) again.scrollTop = keep; else again.scrollLeft = keep; }
     afterBuild(p);
+    syncSystemWatch();
   }
   live();
-  // Area yang bisa diklik/hover (sisanya tembus ke app di belakang)
   const full = sz.w + sz.s * 2;
   const m = p === 'expanded' ? 6 : 0;
   nusa.setRect({ x: (CANVAS_W - full) / 2 - m, y: 0, w: full + m * 2, h: Math.max(sz.h, 8) + m });
 }
 
-/** Pop-up kecil seukuran notch (volume, baterai lemah, charger dicabut, timer selesai). */
 const SMALL_FLASH = ['volume', 'low', 'unplug', 'done'];
 const viewClass = (p) => p === 'flash' && SMALL_FLASH.includes(S.flash.kind) ? 'compact'
   : ({ expanded: 'panel', flash: 'pop', lip: '' }[p] ?? (p === 'idle' ? 'compact center' : 'compact'));
 
-/* ================= isi ================= */
+/* ================= Closed Notch & Flash ================= */
+function privacyDotsHTML() {
+  if (!S.cfg.privacyDots) return '';
+  const mic = S.privacy.mic?.active, cam = S.privacy.cam?.active;
+  if (!mic && !cam) return '';
+  return `<span class="pdots">${mic ? `<i class="pdot mic" title="Mic: ${esc(S.privacy.mic.app || 'Active')}"></i>` : ''}${cam ? `<i class="pdot cam" title="Camera: ${esc(S.privacy.cam.app || 'Active')}"></i>` : ''}</span>`;
+}
 
 function build(p) {
   if (p === 'lip') return '';
   if (p === 'flash') return flashHTML(S.flash);
   if (p === 'expanded') return panelHTML();
+  const dots = privacyDotsHTML();
   if (p === 'music') {
     const m = S.media;
     return `${m.art ? `<img class="art" src="${esc(m.art)}" alt="">` : `<span class="art"></span>`}<span class="t">${esc(m.title)}</span>
-      <span class="eq ${m.playing ? 'on' : ''}"><i></i><i></i><i></i><i></i></span>${S.timer ? ringSVG('timer') : ''}`;
+      <span class="eq ${m.playing ? 'on' : ''}"><i></i><i></i><i></i><i></i></span>${S.timer ? ringSVG('timer') : ''}${dots}`;
   }
-  if (p === 'timer') return `${IC.timer}<span class="t"></span><span class="mono" style="color:#ff9f0a" data-live="timerLeft"></span>`;
-  if (p === 'focus') return `<span data-live="focusRing"></span><span class="t">${esc(S.focus.phase === 'focus' ? S.focus.title || 'Focus' : 'Break')}</span><span class="mono" data-live="focusLeft" style="color:${S.focus.phase === 'focus' ? 'var(--mint)' : 'var(--rest)'}"></span>`;
-  return `<span data-live="idle"></span>`;
+  if (p === 'timer') return `${IC.timer}<span class="t"></span><span class="mono" style="color:#ff9f0a" data-live="timerLeft"></span>${dots}`;
+  if (p === 'focus') return `<span data-live="focusRing"></span><span class="t">${esc(S.focus.phase === 'focus' ? S.focus.title || 'Focus' : 'Break')}</span><span class="mono" data-live="focusLeft" style="color:${S.focus.phase === 'focus' ? 'var(--mint)' : 'var(--rest)'}"></span>${dots}`;
+  return `<span data-live="idle"></span>${dots}`;
 }
 
 function afterBuild(p) {
-  // Cermin: kamera mati kalau panel ditutup / pindah tab
-  if (S.mirror?.stream && (p !== 'expanded' || S.tab !== 'home')) stopMirror();
+  if (S.mirror?.stream && (p !== 'expanded' || S.settingsOpen || S.tab !== 'home')) stopMirror();
   const v = $('#mirror');
   if (v && S.mirror?.stream && v.srcObject !== S.mirror.stream) v.srcObject = S.mirror.stream;
-  if (p !== 'expanded') return;
-  if (S.tab === 'quran') scrollQuran(false);
+  if (p !== 'expanded' || S.settingsOpen) return;
   if (S.tab === 'home' && Date.now() - S.cal.at > 60000) loadCalendar();
   if (S.tab === 'music') { musicPoll(); $('#musicQ')?.focus(); }
   if (S.tab === 'tasks') $('#taskIn')?.focus();
@@ -185,15 +249,11 @@ function ringSVG(kind) {
     stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - Math.max(0, Math.min(1, frac)))}" stroke-linecap="round" transform="rotate(-90 6.5 6.5)"/></svg>`;
 }
 
-/* ---------- pop-up ---------- */
-
 function flashHTML(f) {
   switch (f.kind) {
     case 'track':
       return `${S.media?.art ? `<img class="badge" src="${esc(S.media.art)}" style="border-radius:9px;object-fit:cover" alt="">` : `<span class="badge">${IC.music}</span>`}
         <span class="txt"><b>${esc(S.media?.title)}</b><small>${esc(S.media?.artist)}</small></span><span class="eq on" style="--tint:${S.tint || '#fff'}"><i></i><i></i><i></i><i></i></span>`;
-    case 'prayer':
-      return `<span class="badge">${IC.moon}</span><span class="txt"><b>${f.soon ? `${esc(f.name)} in 10 minutes` : `It’s time for ${esc(f.name)}`}</b><small>${f.soon ? 'Get ready' : 'Click to dismiss'}</small></span><span class="mono" style="font-size:16px;font-weight:600">${f.time}</span>`;
     case 'task':
       return `<span class="badge" style="color:var(--mint)">${IC.bell}</span><span class="txt"><b>${esc(f.title)}</b><small>Reminder · ${esc(f.time)}</small></span>
         <button class="cbtn" data-act="taskSnooze" data-id="${f.id}" title="Snooze 10 minutes">${IC.clock}</button><button class="cbtn mint" data-act="taskDone" data-id="${f.id}" title="Mark as done">${IC.check}</button>`;
@@ -205,12 +265,35 @@ function flashHTML(f) {
         ${f.rest ? `<button class="pill" style="background:var(--mint)" data-act="focus">${IC.target} Focus</button>` : `<button class="pill" style="background:var(--rest)" data-act="break">${IC.cup} Break</button>`}
         <button class="cbtn" data-act="dismiss">${IC.x}</button>`;
     case 'charging': {
-      const mins = S.battery?.toFull;
-      const detail = mins > 0 ? (mins >= 60 ? `${Math.floor(mins / 60)} hr ${mins % 60} min until full` : `${mins} min until full`) : 'Connected to power';
+      const minsLeft = S.battery?.toFull;
+      const detail = minsLeft > 0 ? (minsLeft >= 60 ? `${Math.floor(minsLeft / 60)} hr ${minsLeft % 60} min until full` : `${minsLeft} min until full`) : 'Connected to power';
       return `<span class="batt"><i id="battFill"></i>${IC.bolt}</span><span class="txt"><b>Charging</b><small>${detail}</small></span><span class="big mono">${f.percent}%</span>`;
     }
     case 'device':
       return `<span class="badge">${IC.headphones}</span><span class="txt"><b>${esc(f.name)}</b><small class="mono">${esc(f.detail)}</small></span><span style="color:var(--green);font-size:16px">${IC.check}</span>`;
+    case 'phoneDrop':
+      return `<span class="badge" style="color:var(--mint)">${IC.phone}</span>
+        <span class="txt"><b>${esc(f.device || 'Phone')} wants to send ${f.count} file${f.count > 1 ? 's' : ''}</b><small>${esc(f.names)}</small></span>
+        <button class="pill" style="background:var(--mint)" data-act="pdApprove" data-id="${esc(f.reqId)}">Accept</button>
+        <button class="cbtn" data-act="pdDecline" data-id="${esc(f.reqId)}" title="Decline">${IC.x}</button>`;
+    case 'waterRemind':
+      return `<span class="badge" style="color:var(--mint)">${IC.water}</span>
+        <span class="txt"><b>Time to drink water</b><small>${Water.totalMl(S.water)} / ${S.water.goalMl} ml today</small></span>
+        <button class="pill" style="background:var(--mint)" data-act="waterDrinkFlash">Drank</button>
+        <button class="cbtn" data-act="waterSnooze" title="Snooze 15m">${IC.clock}</button>`;
+    case 'timerDone':
+      return `<span class="badge" style="color:#ff9f0a">${IC.timer}</span>
+        <span class="txt"><b>${esc(f.title || 'Countdown finished')}</b><small>Time’s up</small></span>
+        <button class="pill" style="background:#ff9f0a" data-act="cdRestart">Restart</button>
+        <button class="cbtn" data-act="dismiss">${IC.x}</button>`;
+    case 'notif':
+      return `<span class="badge" style="color:var(--mint)">${IC.bell}</span>
+        <span class="txt"><b>${esc(f.app || 'Notification')}: ${esc(f.title)}</b>${S.cfg.notifBody && f.body ? `<small>${esc(f.body)}</small>` : ''}</span>
+        <button class="cbtn" data-act="notifMuteApp" data-app="${esc(f.app)}" title="Mute ${esc(f.app)}">${IC.bellOff}</button>
+        <button class="cbtn" data-act="dismiss" title="Dismiss">${IC.x}</button>`;
+    case 'privacy':
+      return `<span class="badge" style="color:${f.kindName === 'Camera' ? 'var(--green)' : '#ff9f0a'}">${f.kindName === 'Camera' ? IC.cam : IC.mic}</span>
+        <span class="txt"><b>${esc(f.kindName)} in use</b><small>${esc(f.app || 'An app')} started using your ${f.kindName.toLowerCase()}</small></span>`;
     case 'volume': return `<span data-live="volFlash" style="display:contents"></span>`;
     case 'low': return smallRow(IC.battLow, 'var(--late)', 'Low battery', `${f.percent}%`, 'var(--late)');
     case 'unplug': return smallRow(IC.plug, 'var(--dim)', 'Charger removed', `${f.percent}%`, '#fff');
@@ -234,7 +317,6 @@ function volFlashHTML() {
 
 function showFlash(f, seconds) {
   clearTimeout(flashTimer);
-  // Volume yang digeser terus: isinya aja yang diganti, biar nggak animasi ulang tiap langkah
   if (f.kind === 'volume' && S.flash?.kind === 'volume') {
     Object.assign(S.flash, f);
     live();
@@ -247,12 +329,31 @@ function showFlash(f, seconds) {
   flashTimer = setTimeout(() => { S.flash = null; render(); }, seconds * 1000);
 }
 
-/* ---------- panel ---------- */
+/* ================= Panel & Tabs ================= */
+const ALL_TABS = [
+  ['home', 'Home', 'home'],
+  ['music', 'Music', 'music'],
+  ['tasks', 'Tasks', 'tasks'],
+  ['tray', 'Tray', 'tray'],
+  ['clips', 'Clips', 'clips'],
+  ['water', 'Water', 'water'],
+  ['timer', 'Timer', 'stopwatch'],
+  ['tools', 'Tools', 'tools'],
+  ['system', 'System', 'system'],
+];
 
-const TABS = [['home', 'Home', 'home'], ['music', 'Music', 'music'], ['tasks', 'Tasks', 'tasks'], ['tray', 'Tray', 'tray'], ['clips', 'Clips', 'clips'], ['prayer', 'Prayer', 'moon'], ['quran', 'Quran', 'book']];
+function visibleTabs() {
+  return ALL_TABS.filter(([k]) => {
+    if (['home', 'music', 'tasks', 'tray', 'clips'].includes(k)) return true;
+    if (k === 'system') return S.cfg.sysEnabled || S.cfg.tabs.system;
+    return S.cfg.tabs[k] !== false;
+  });
+}
 
 function panelHTML() {
-  const tabs = TABS.map(([k, label, ic]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}" title="${label}">${IC[ic]}${S.tab === k ? `<span>${label}</span>` : ''}</button>`).join('');
+  const vTabs = visibleTabs();
+  if (!vTabs.some(([k]) => k === S.tab)) S.tab = 'home';
+  const tabs = vTabs.map(([k, label, ic]) => `<button class="tab ${!S.settingsOpen && S.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}" title="${label}">${IC[ic]}${!S.settingsOpen && S.tab === k ? `<span>${label}</span>` : ''}</button>`).join('');
   const timer = S.timer
     ? `<span style="color:#ff9f0a;font-size:12px" class="mono" data-live="timerLeft"></span><button class="chip" data-act="timerStop">Stop</button>`
     : `<span style="color:var(--dim)">${IC.timer}</span>${[5, 15, 25].map((m) => `<button class="chip" data-act="timer" data-m="${m}">${m}m</button>`).join('')}`;
@@ -263,25 +364,24 @@ function panelHTML() {
     <span class="mono" style="font-size:11px;font-weight:500">${b.level}%</span>` : '';
   const vol = S.audio ? `<span class="vol" title="${esc(S.audio.name)}"><button data-act="muteToggle" title="${S.audio.muted ? 'Unmute' : 'Mute'}">${spkIcon(S.audio)}</button>
     <span class="vtrack" id="volTrack" data-live="volLevel"></span></span><span class="sep"></span>` : '';
-  return `<div class="top">${tabs}<span class="sp"></span>${vol}${timer}<span class="sep"></span>${wx}${batt}
+  const body = S.settingsOpen ? settingsHTML() : ({
+    home: homeHTML, music: musicHTML, tasks: tasksHTML, tray: trayHTML, clips: clipsHTML,
+    water: waterHTML, timer: timerHTML, tools: toolsHTML, system: systemHTML,
+  }[S.tab] || homeHTML)();
+  return `<div class="top">${tabs}<span class="sp"></span>${privacyDotsHTML()}${vol}${timer}<span class="sep"></span>${wx}${batt}
       <button class="ibtn ${S.pinned ? 'on' : ''}" data-act="pin" title="${S.pinned ? 'Unpin panel' : 'Keep panel open'}">${S.pinned ? IC.lock : IC.unlock}</button>
-      <button class="ibtn" data-act="gear" title="Settings">${IC.gear}</button></div>
-    <div class="body">${({ home: homeHTML, music: musicHTML, tasks: tasksHTML, tray: trayHTML, prayer: prayerHTML, quran: quranHTML, clips: clipsHTML }[S.tab] || homeHTML)()}</div>
+      <button class="ibtn ${S.settingsOpen ? 'on' : ''}" data-act="gear" title="Settings">${IC.gear}</button></div>
+    <div class="body">${body}</div>
     ${S.menu ? menuHTML() : ''}`;
 }
 
-/* ---------- Home ---------- */
-
-/** Sampul + ikon app sumber di pojoknya; diklik = buka app yang lagi muter. */
+/* ================= Home ================= */
 function coverHTML(m, cls = 'cover') {
   const src = m.hiArt || m.art;
   const img = src ? `<img class="${cls}" src="${esc(src)}" alt=""${m.hiArt && m.art ? ` data-fallback="${esc(m.art)}"` : ''}>` : `<span class="${cls} empty">${IC.music}</span>`;
   return `<span class="cwrap" ${m.path || m.source ? `data-act="openSource" title="Open ${esc(m.app || 'app')}"` : ''}>${img}${m.icon ? `<img class="appic" src="${esc(m.icon)}" alt="">` : ''}</span>`;
 }
-
-// Sampul HD gagal dimuat (offline dll.): balik ke sampul kecil dari Windows
 document.addEventListener('error', (e) => { const f = e.target?.dataset?.fallback; if (f) { delete e.target.dataset.fallback; e.target.src = f; } }, true);
-
 const seekable = (m) => m?.duration > 0 && !m.noTimeline && m.canSeek !== false;
 
 function homeHTML() {
@@ -300,8 +400,6 @@ function homeHTML() {
     </div>`;
 }
 
-/* Kalender: strip 7 hari kayak versi Mac. Isinya event dari kalender Windows (akun di Settings › Accounts /
-   app Calendar bawaan), ditambah tugas Nusa yang jatuh tempo di hari itu dan sholat berikutnya kalau hari ini. */
 const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 
 async function loadCalendar() {
@@ -309,7 +407,7 @@ async function loadCalendar() {
   const from = +dayStart(Date.now()) - 2 * 86400000;
   const r = await nusa.calendar(from, 7);
   S.cal = { status: r?.error === 'denied' ? 'denied' : r?.error ? 'error' : 'ok', events: r?.events || [], calendars: r?.calendars || 0, at: Date.now() };
-  if (S.expanded && S.tab === 'home') live();
+  if (S.expanded && !S.settingsOpen && S.tab === 'home') live();
 }
 
 function calendarHTML() {
@@ -329,11 +427,6 @@ function agendaHTML() {
   const sel = S.calSel ? dayStart(S.calSel) : today;
   const end = +sel + 86400000;
   const rows = [];
-  if (+sel === +today) {
-    const n = Prayer.next(S.place, now);
-    if (n.date < end) rows.push({ color: 'var(--mint)', title: n.title, time: `${hhmm(n.date, S.place.tz)} · in ${mins(n.date - now)}`, at: +n.date });
-  }
-  // Event kalender Windows yang nyentuh hari ini (acara seharian / lewat tengah malam ikut kehitung)
   for (const e of S.cal.events) {
     const until = e.start + Math.max(1, e.minutes) * 60000;
     if (e.start >= end || until <= +sel) continue;
@@ -356,13 +449,11 @@ function wxCardHTML() {
   const hours = w.hours.filter((h) => h.time > Date.now()).slice(0, 4);
   return `<div class="wx" style="display:flex;align-items:center;gap:8px">${IC[wxIcon(w.code, w.day)]}<b>${Math.round(w.temp)}°</b></div>
     <small style="color:var(--dim);font-size:11.5px">${wxLabel(w.code)} · feels ${Math.round(w.feels)}°</small>
-    <small style="color:var(--faint);font-size:11px">${esc(S.place.name)}</small>
+    <button style="color:var(--faint);font-size:11px;text-align:left" data-act="cityMenu">${esc(S.place.name)} · ${esc(S.place.zone)} ${IC.chevron}</button>
     <div class="wx-hours">${hours.map((h) => `<div>${hhmm(new Date(h.time), S.place.tz)}${IC[wxIcon(h.code, true)]}<b class="${h.rain >= 30 ? 'wet' : ''}">${h.rain >= 30 ? h.rain + '%' : Math.round(h.temp) + '°'}</b></div>`).join('')}</div>`;
 }
 
-/* ---------- Music ---------- */
-// Senandung jalan → antrean + cari lagu. Nggak jalan → pemutar dari app apa aja (Spotify, browser, Media Player, dll).
-
+/* ================= Music ================= */
 function musicHTML() {
   const mu = S.music;
   if (!mu.online) return `<div class="col" style="flex:1">${systemPlayerHTML()}</div>`;
@@ -404,7 +495,7 @@ function songRow(s, k, queue) {
 let musicTimer = null, searchTimer = null;
 async function musicPoll() {
   clearTimeout(musicTimer);
-  if (!S.expanded || S.tab !== 'music') return;
+  if (!S.expanded || S.settingsOpen || S.tab !== 'music') return;
   const st = await nusa.senandung('GET', '/api/remote/state');
   const mu = S.music;
   const was = JSON.stringify([mu.online, mu.idx, mu.queue.length, mu.playing]);
@@ -428,9 +519,8 @@ function musicSearch() {
   }, 400);
 }
 
-/** Ganti isi panel tanpa ngerusak kolom input yang lagi diketik. */
 function refreshBody() {
-  if (!S.expanded) return;
+  if (!S.expanded || S.settingsOpen) return;
   const body = $('.body');
   if (!body) return;
   if (S.tab === 'music') {
@@ -439,7 +529,6 @@ function refreshBody() {
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
     const fresh = tmp.firstElementChild;
-    // Kolom cari yang lama dipertahanin biar ketikan & fokus nggak ilang
     if (field && fresh.firstElementChild?.classList.contains('field')) fresh.replaceChild(field, fresh.firstElementChild);
     body.replaceChildren(fresh);
     live();
@@ -452,10 +541,8 @@ function refreshBody() {
   live();
 }
 
-/* ---------- Tasks ---------- */
-
+/* ================= Tasks ================= */
 const saveTasks = () => LS.set('tasks', S.tasks);
-const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 function dueText(d) {
   const now = new Date(), t = hhmm(d);
@@ -524,99 +611,531 @@ function checkTasks() {
   showFlash({ kind: 'task', id: t.id, title: t.title, time: dueText(new Date(t.due)) }, 30);
 }
 
-/* ---------- Prayer ---------- */
+/* ================= Clips (Off by default + Snippets) ================= */
+function allClipCards() {
+  const q = S.clipQuery.trim().toLowerCase();
+  const pinnedIds = new Set(S.pinnedClips.map((c) => c.id));
+  const merged = [...S.pinnedClips, ...S.clips.filter((c) => !pinnedIds.has(c.id))];
+  if (!q) return merged;
+  return merged.filter((c) => {
+    if (c.type === 'text') return c.text.toLowerCase().includes(q);
+    if (c.type === 'files') return c.files.some((f) => f.name.toLowerCase().includes(q));
+    return 'image'.includes(q);
+  });
+}
 
-function prayerHTML() {
-  return `<div class="col" style="width:262px;flex-direction:row;align-items:center;gap:16px" data-live="prTop"></div>
-    <div class="col" style="flex:1;margin-left:22px;gap:6px">
-      <div style="display:flex;justify-content:space-between;font-size:11px"><b>Today</b><span style="color:var(--dim)" class="mono" data-live="prMarks"></span></div>
-      <div class="track" data-live="prTrack"></div>
-      <div class="chips"><button class="chip" data-act="cityMenu" title="${S.autoPlace ? 'Current location' : 'Chosen city'}">${S.autoPlace ? `<span style="color:var(--mint);display:inline-flex">${IC.pin}</span>` : IC.pin} ${S.autoPlace && S.locating && !LS.get('autoPlace', null) ? 'Locating…' : esc(S.place.name)} · ${S.place.zone}</button>
-        <span class="chip">${qiblaArrow()} Qibla ${Math.round(Prayer.qibla(S.place).deg)}° ${Prayer.qibla(S.place).point}</span>
-        <button class="chip" data-act="tab" data-tab="quran">${IC.book} Quran</button><span class="sp"></span>
-        <button class="chip" data-act="soundMenu">${IC.speaker} ${{ adzan: 'Adzan', tone: 'Tone', silent: 'Silent' }[S.sound]} ${IC.chevron}</button></div>
+function clipCardHTML(c) {
+  const isPinned = S.pinnedClips.some((p) => p.id === c.id);
+  const isOk = S.copied === c.id;
+  let body = '', meta = '';
+  if (c.type === 'image') {
+    body = `<img class="clip-thumb" src="${esc(c.dataUrl)}" alt="">`;
+    meta = isOk ? 'Copied' : `${c.width}×${c.height}`;
+  } else if (c.type === 'files') {
+    body = `<p>${c.files.map((f) => esc(f.name)).join('\n')}</p>`;
+    meta = isOk ? 'Copied' : `${c.files.length} file${c.files.length > 1 ? 's' : ''}`;
+  } else {
+    body = `<p>${esc(c.text.trim())}</p>`;
+    meta = isOk ? 'Copied' : `${c.text.length} chars`;
+  }
+  return `<div class="card ${isOk ? 'ok' : ''} ${isPinned ? 'pinned' : ''}" draggable="true" data-clip-id="${esc(c.id)}" data-act="clipCopy" data-id="${esc(c.id)}">
+    ${body}
+    <div class="clip-acts"><small>${meta}</small><span class="sp"></span>
+      <button class="clip-btn ${isPinned ? 'on' : ''}" data-act="clipPin" data-id="${esc(c.id)}" title="${isPinned ? 'Unpin' : 'Pin snippet'}">${IC.bookmark}</button>
+      <button class="clip-btn" data-act="clipDel" data-id="${esc(c.id)}" title="Remove">${IC.x}</button>
+    </div></div>`;
+}
+
+function clipsHTML() {
+  const cards = allClipCards();
+  const topBar = S.cfg.clipsEnabled
+    ? `<div class="chips">
+        <div class="field" style="height:28px;flex:1">${IC.search}<input id="clipQ" placeholder="Filter clips…" value="${esc(S.clipQuery)}" autocomplete="off"></div>
+        <div class="field" style="height:28px;width:200px"><input id="clipSnip" placeholder="Save snippet…" value="${esc(S.clipSnippet)}" autocomplete="off"><button class="small-btn mint" data-act="addSnippet" title="Save pinned snippet">${IC.plus}</button></div>
+        <button class="chip" data-act="clipsToggle">Pause</button>
+      </div>`
+    : `<div class="chips">
+        <button class="chip on" data-act="clipsToggle">${IC.clips} Turn on clipboard history</button>
+        <div class="field" style="height:28px;flex:1"><input id="clipSnip" placeholder="Save a pinned snippet (works even while history is off)…" value="${esc(S.clipSnippet)}" autocomplete="off"><button class="small-btn mint" data-act="addSnippet" title="Save snippet">${IC.plus}</button></div>
+      </div>`;
+  const content = cards.length
+    ? `<div class="cards" style="flex:1">${cards.map(clipCardHTML).join('')}</div>`
+    : `<div class="note">${IC.clips}<span>${S.cfg.clipsEnabled ? 'Text, files, or images you copy will appear here' : 'Clipboard history is off — turn it on or save pinned snippets above'}</span></div>`;
+  return `<div class="col" style="flex:1;gap:8px">${topBar}${content}</div>`;
+}
+
+function findClip(id) {
+  return S.pinnedClips.find((c) => c.id === id) || S.clips.find((c) => c.id === id);
+}
+
+/* ================= Tray (File Shelf + Multi-select + Text Cards + Phone Drop) ================= */
+const midTrim = (s, n = 16) => s.length <= n ? s : s.slice(0, Math.ceil(n / 2) - 1) + '…' + s.slice(-(Math.floor(n / 2)));
+
+function syncShelfMain() {
+  nusa.shelfSync?.(S.shelf);
+}
+
+function trayHTML() {
+  if (S.phoneDrop.active && S.phoneDrop.url) {
+    return `<div class="drop"><div class="qr-box">${QR.toSVG(S.phoneDrop.url, 3)}
+      <div class="col" style="flex:1;gap:6px">
+        <span class="label">Phone Drop</span>
+        <b>Scan with your phone</b>
+        <small class="mono" style="color:var(--dim);font-size:11px;word-break:break-all">${esc(S.phoneDrop.url)}</small>
+        <div class="chips" style="margin-top:4px">
+          <button class="chip" data-act="pdCopyUrl">${IC.copy} Copy link</button>
+          <button class="chip on" data-act="pdStop">Done</button>
+        </div>
+      </div></div></div>`;
+  }
+
+  const hasAny = S.shelf.length > 0 || S.shelfNotes.length > 0;
+  const selCount = S.shelfSel.length;
+  const topControls = `<div class="chips">
+    <div class="field" style="height:26px;flex:1"><input id="noteIn" placeholder="+ Note card on shelf (Enter to add)…" value="${esc(S.noteText)}" autocomplete="off"><button class="small-btn mint" data-act="addShelfNote" title="Add note">${IC.plus}</button></div>
+    ${selCount > 0 ? `<button class="chip on" draggable="true" data-act="dragSelected" id="dragSelBtn">Drag ${selCount} selected</button><button class="chip" data-act="removeSelected">${IC.trash} Remove</button>` : ''}
+    <button class="chip" data-act="pdStart">${IC.phone} Phone</button>
+  </div>`;
+
+  const fileItems = S.shelf.map((p, i) => {
+    const f = S.files[p];
+    const sel = S.shelfSel.includes(p);
+    return `<div class="sitem ${sel ? 'sel' : ''}" draggable="true" data-act="fileOpen" data-i="${i}" data-path="${esc(p)}" title="${esc(p)}\nClick to open · drag out to use">
+      <button class="sel-dot" data-act="fileSel" data-path="${esc(p)}" title="Select">${sel ? IC.check : ''}</button>
+      ${f?.icon ? `<img src="${esc(f.icon)}" alt="">` : `<span class="ph">${IC.clips}</span>`}<small>${esc(midTrim(f?.name || p.split(/[\\/]/).pop()))}</small>
+      <button class="rm" data-act="fileRemove" data-i="${i}" title="Remove from Tray">${IC.xCircle}</button></div>`;
+  });
+
+  const noteItems = S.shelfNotes.map((n, i) => `
+    <div class="sitem note-card" draggable="true" data-act="noteCopy" data-ni="${i}" title="Click to copy · drag out as .txt">
+      <span class="ph">${esc(n.text)}</span><small>Note</small>
+      <button class="rm" data-act="noteRemove" data-ni="${i}" title="Remove note">${IC.xCircle}</button>
+    </div>`);
+
+  const inner = hasAny
+    ? `<div class="shelf">${fileItems.join('')}${noteItems.join('')}</div>
+      <div class="shelf-side"><button class="sbtn" data-act="fileShow" title="Show the last file in its folder">${IC.clips}<span>Show</span></button>
+        <button class="sbtn" data-act="trayClear" title="Remove everything from Tray">${IC.x}<span>Clear</span></button></div>`
+    : `<div class="note">${IC.trayIn}<span>Drop files here, add a note card, or use Phone Drop</span></div>`;
+
+  return `<div class="col" style="flex:1;gap:8px">${topControls}<div class="drop ${S.dropping ? 'on' : ''}">${inner}</div></div>`;
+}
+
+async function addToShelf(p) {
+  if (!p || S.shelf.includes(p)) return;
+  const info = await nusa.fileInfo(p);
+  if (!info) return;
+  S.files[p] = info;
+  S.shelf = [...S.shelf, p];
+  LS.set('shelf', S.shelf);
+  syncShelfMain();
+  if (S.expanded && S.tab === 'tray') render(true);
+}
+
+function removeFromShelf(p) {
+  S.shelf = S.shelf.filter((x) => x !== p);
+  S.shelfSel = S.shelfSel.filter((x) => x !== p);
+  LS.set('shelf', S.shelf);
+  syncShelfMain();
+  render(true);
+}
+
+async function loadShelf() {
+  const keep = [];
+  for (const p of S.shelf) {
+    const info = await nusa.fileInfo(p);
+    if (info) { S.files[p] = info; keep.push(p); }
+  }
+  S.shelf = keep;
+  LS.set('shelf', keep);
+  syncShelfMain();
+  if (S.expanded && S.tab === 'tray') render(true);
+}
+
+/* ================= Water Tracker ================= */
+function saveWater() { LS.set('water', S.water); }
+
+function waterHTML() {
+  const w = S.water;
+  const total = Water.totalMl(w);
+  const pct = Math.min(1, w.goalMl > 0 ? total / w.goalMl : 0);
+  const C = 2 * Math.PI * 39;
+  const buckets = Water.hourlyBuckets(w);
+  const maxB = Math.max(w.sipMl, ...buckets, 250);
+
+  const ring = `<div class="w-ring"><svg viewBox="0 0 92 92"><circle cx="46" cy="46" r="39" stroke="rgba(255,255,255,.1)"/><circle cx="46" cy="46" r="39" stroke="var(--mint)" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/></svg>
+    <div><b class="mono">${total}</b><small>/ ${w.goalMl} ml</small></div></div>`;
+
+  const bars = `<div class="w-bars">${buckets.map((v, h) => {
+    const hPct = v > 0 ? Math.max(12, Math.round((v / maxB) * 100)) : 4;
+    return `<div class="w-bar" title="${pad(h)}:00 · ${v} ml"><i class="${v ? '' : 'empty'}" style="height:${hPct}%"></i></div>`;
+  }).join('')}</div>`;
+
+  const cfgRow = S.waterCfgOpen
+    ? `<div class="w-cfg">
+        <span>Goal</span><input type="number" id="wGoal" value="${w.goalMl}" step="100" min="250">
+        <span>Sip</span><input type="number" id="wSip" value="${w.sipMl}" step="50" min="50">
+        <span>Bottle</span><input type="number" id="wBottle" value="${w.bottleMl}" step="100" min="100">
+        <span>Hrs</span><input type="number" id="wStart" value="${w.startHour}" min="0" max="23" style="width:42px">–<input type="number" id="wEnd" value="${w.endHour}" min="1" max="24" style="width:42px">
+        <button class="chip ${w.remind ? 'on' : ''}" data-act="waterRemindToggle">${w.remind ? 'Reminders On' : 'Reminders Off'}</button>
+        <button class="chip" data-act="waterReset">Reset today</button>
+      </div>`
+    : `<div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint)"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>`;
+
+  return `<div class="col" style="width:220px;justify-content:center;gap:10px">
+      <div style="display:flex;align-items:center;gap:14px">${ring}
+        <div class="col" style="gap:6px">
+          <span class="label">Hydration</span>
+          <button class="chip on" data-act="waterDrink">${IC.plus} Drink +${w.sipMl} ml</button>
+          <div style="display:flex;gap:6px">
+            <button class="chip" data-act="waterUndo" ${w.entries.length ? '' : 'disabled style="opacity:.4"'}>${IC.undo} Undo</button>
+            <button class="chip ${S.waterCfgOpen ? 'on' : ''}" data-act="waterCfgToggle" title="Water settings">${IC.gear}</button>
+          </div>
+        </div>
+      </div>
+      ${S.waterRefill ? `<span class="chip on" style="background:var(--rest);color:#000">Refill your ${w.bottleMl} ml bottle</span>` : ''}
+    </div>
+    <div class="vline"></div>
+    <div class="col" style="flex:1;justify-content:center;gap:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="label">24-hour intake</span><small style="color:var(--dim)">${w.entries.length} sip${w.entries.length === 1 ? '' : 's'} · ${Math.round(pct * 100)}%</small></div>
+      ${bars}${cfgRow}
     </div>`;
 }
 
-const qiblaArrow = () => `<span style="display:inline-grid;rotate:${Prayer.qibla(S.place).deg}deg">${IC.north}</span>`;
-const mins = (ms) => { const m = Math.ceil(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)} hr ${m % 60} min` : `${m} min`; };
-
-function lastPrayer(now) {
-  const done = Prayer.times(S.place, now).filter((t) => t.prayer && t.date <= now);
-  if (done.length) return done[done.length - 1].date;
-  return Prayer.times(S.place, new Date(+now - 86400000)).find((t) => t.key === 'isya').date;
+function checkWater() {
+  const today = localDateStr();
+  if (S.water.date !== today) { S.water = Water.resetDay(S.water, today); saveWater(); }
+  const now = Date.now();
+  if (Water.nextReminderDue(S.water, now)) {
+    S.water = { ...S.water, lastRemindedAt: now };
+    saveWater();
+    chime([587, 880]);
+    if (!S.expanded) showFlash({ kind: 'waterRemind' }, 20);
+  }
 }
 
-function prTopHTML() {
-  const now = new Date(), n = Prayer.next(S.place, now), prev = lastPrayer(now);
-  const frac = Math.max(0, Math.min(1, (now - prev) / (n.date - prev)));
-  const C = 2 * Math.PI * 38, left = (n.date - now) / 1000;
-  const hijri = new Intl.DateTimeFormat('en-US-u-ca-islamic-umalqura', { day: 'numeric', month: 'long', year: 'numeric' }).format(now);
-  return `<div class="pr-ring"><svg viewBox="0 0 84 84"><circle cx="42" cy="42" r="38" stroke="rgba(255,255,255,.1)"/><circle cx="42" cy="42" r="38" stroke="var(--mint)" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}"/></svg>
-    <div><b>${clock(left)}</b><small>left</small></div></div>
-    <div class="col" style="gap:2px"><span class="label">Up next</span><span class="pr-next">${n.title}</span>
-    <span class="mono" style="color:var(--dim);font-size:12px">${hhmm(n.date, S.place.tz)} · in ${mins(n.date - now)}</span>
-    <span style="color:var(--faint);font-size:11px;margin-top:4px">${hijri.replace(/ AH$/, '')} AH</span></div>`;
+/* ================= Timer / Stopwatch / Pomodoro ================= */
+function timerHTML() {
+  const sub = `<div class="chips">
+    ${[['countdown', 'Countdown'], ['stopwatch', 'Stopwatch'], ['pomodoro', 'Pomodoro']].map(([k, l]) =>
+      `<button class="chip ${S.timerMode === k ? 'on' : ''}" data-act="tmMode" data-m="${k}">${l}</button>`).join('')}
+  </div>`;
+
+  if (S.timerMode === 'countdown') {
+    const remMs = TimerLib.remainingCountdown(S.cd);
+    const endsAt = S.cd.running && S.cd.endAt ? `Ends at ${hhmm(new Date(S.cd.endAt))}` : `${Math.round(S.cd.durationMs / 60000)} min preset`;
+    return `<div class="col" style="flex:1;gap:10px">${sub}
+      <div style="display:flex;align-items:center;gap:20px;flex:1">
+        <div class="col" style="gap:4px">
+          <div class="tm-big mono" data-live="cdTime">${clock(remMs / 1000)}</div>
+          <small style="color:var(--dim)">${endsAt}</small>
+          <div class="chips" style="margin-top:6px">
+            <button class="chip on" data-act="cdToggle">${S.cd.running ? 'Pause' : 'Start'}</button>
+            <button class="chip" data-act="cdAdj" data-d="-1">-1m</button>
+            <button class="chip" data-act="cdAdj" data-d="1">+1m</button>
+            <button class="chip" data-act="cdReset">Reset</button>
+          </div>
+        </div>
+        <div class="vline"></div>
+        <div class="col" style="flex:1;gap:8px">
+          <span class="label">Presets</span>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${TimerLib.PRESETS.map((m) => `<button class="chip ${!S.cd.running && Math.round(S.cd.durationMs / 60000) === m ? 'on' : ''}" data-act="cdPreset" data-m="${m}">${m}m</button>`).join('')}
+          </div>
+        </div>
+      </div></div>`;
+  }
+
+  if (S.timerMode === 'stopwatch') {
+    const elMs = TimerLib.elapsedStopwatch(S.sw);
+    const fmtSw = (ms) => {
+      const cs = Math.floor((ms % 1000) / 10);
+      return `${clock(ms / 1000)}.${pad(cs)}`;
+    };
+    const laps = [...S.sw.laps].reverse();
+    return `<div class="col" style="flex:1;gap:10px">${sub}
+      <div style="display:flex;gap:18px;flex:1;min-height:0">
+        <div class="col" style="width:230px;justify-content:center;gap:10px">
+          <div class="tm-big mono" data-live="swTime">${fmtSw(elMs)}</div>
+          <div class="chips">
+            <button class="chip on" data-act="swToggle">${S.sw.running ? 'Pause' : 'Start'}</button>
+            <button class="chip" data-act="swLap" ${S.sw.running || elMs > 0 ? '' : 'disabled style="opacity:.4"'}>Lap</button>
+            <button class="chip" data-act="swReset">Reset</button>
+          </div>
+        </div>
+        <div class="vline"></div>
+        <div class="col" style="flex:1;min-height:0;gap:6px">
+          <span class="label">Laps (${laps.length})</span>
+          <div class="tm-laps">${laps.length ? laps.map((l) => `<div class="tm-lap mono"><span>#${l.index}</span><span>+${fmtSw(l.splitMs)}</span><span style="color:var(--dim)">${fmtSw(l.totalMs)}</span></div>`).join('') : '<div class="note"><span>No laps recorded</span></div>'}</div>
+        </div>
+      </div></div>`;
+  }
+
+  // Pomodoro
+  const p = S.pomo;
+  const remMs = TimerLib.remainingPomodoro(p);
+  const dots = Array.from({ length: p.cycles }, (_, i) => {
+    const idx = i + 1;
+    const cls = idx < p.cycle ? 'done' : idx === p.cycle ? 'cur' : '';
+    return `<i class="pomo-dot ${cls}"></i>`;
+  }).join('');
+  return `<div class="col" style="flex:1;gap:10px">${sub}
+    <div style="display:flex;align-items:center;gap:24px;flex:1">
+      <div class="col" style="gap:6px">
+        <span class="label" style="color:${p.phase === 'focus' ? 'var(--mint)' : 'var(--rest)'}">${p.phase === 'focus' ? 'Focus' : 'Break'} · Cycle ${p.cycle}/${p.cycles}</span>
+        <div class="tm-big mono" data-live="pomoTime">${clock(remMs / 1000)}</div>
+        <div class="pomo-dots">${dots}<small style="color:var(--dim);margin-left:6px">${p.completedToday} completed today</small></div>
+      </div>
+      <div class="vline"></div>
+      <div class="col" style="gap:8px">
+        <div class="chips">
+          <button class="chip on" data-act="pomoToggle">${p.running ? 'Pause' : 'Start'}</button>
+          <button class="chip" data-act="pomoSkip">Skip</button>
+          <button class="chip" data-act="pomoReset">Reset</button>
+        </div>
+        <small style="color:var(--dim)">25m focus · 5m short break · 15m long break after ${p.cycles} cycles</small>
+      </div>
+    </div></div>`;
 }
 
-function prTrackHTML() {
-  const now = new Date(), all = Prayer.times(S.place, now), five = all.filter((t) => t.prayer), n = Prayer.next(S.place, now);
-  const start = +all[0].date - 1800000, end = +five[4].date + 3600000;
-  const x = (d) => `calc(26px + (100% - 52px) * ${Math.max(0, Math.min(1, (d - start) / (end - start)))})`;
-  return `<div class="ln"><i style="width:calc((100%) * ${Math.max(0, Math.min(1, (now - start) / (end - start)))})"></i></div>
-    ${five.map((t, i) => {
-      const cls = +t.date === +n.date ? 'next' : t.date <= now ? 'past' : '';
-      return `<span class="dot ${cls}" style="left:${x(t.date)}"></span><span class="lbl ${cls}" style="left:${x(t.date)};top:${i % 2 ? 0 : 48}px">${t.title}<b>${hhmm(t.date, S.place.tz)}</b></span>`;
-    }).join('')}<span class="now" style="left:${x(now)}"></span>`;
+function syncPomoFocus() {
+  if (S.pomo.running) {
+    S.focus = { phase: S.pomo.phase === 'focus' ? 'focus' : 'rest', end: S.pomo.endAt, total: S.pomo.totalMs, title: 'Pomodoro' };
+  } else if (S.focus?.title === 'Pomodoro') {
+    S.focus = null;
+  }
 }
 
-let alarm = new Prayer.Alarm(S.place);
-alarm.check(new Date()); // yang udah lewat pas app baru nyala nggak dibunyiin
+function checkTimers() {
+  const now = Date.now();
+  if (S.cd.running && S.cd.endAt && now >= S.cd.endAt) {
+    S.cd = { ...S.cd, running: false, remainingMs: 0, endAt: null };
+    chime([880, 660, 880]);
+    if (!S.pinned) S.expanded = false;
+    showFlash({ kind: 'timerDone', title: `${Math.round(S.cd.durationMs / 60000)}m countdown` }, 30);
+  }
+  if (S.pomo.running && S.pomo.endAt && now >= S.pomo.endAt) {
+    const wasRest = S.pomo.phase !== 'focus';
+    S.pomo = TimerLib.advancePomodoro(S.pomo);
+    syncPomoFocus();
+    chime(wasRest ? [784, 659] : [523, 659, 784]);
+    if (!S.pinned) S.expanded = false;
+    showFlash({ kind: 'focusEnd', rest: wasRest, title: 'Pomodoro' }, 30);
+  }
+}
 
-/** Ganti tempat: jadwal sholat, kiblat & cuaca ikut. */
+/* ================= System Stats ================= */
+function sparklineSVG(values, color) {
+  if (!values.length) return '';
+  const w = 320, h = 36;
+  const pts = values.map((v, i) => {
+    const x = values.length === 1 ? w : (i / (values.length - 1)) * w;
+    const y = h - Math.max(0, Math.min(100, v)) / 100 * (h - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline fill="none" stroke="${color}" stroke-width="1.8" points="${pts}"/></svg>`;
+}
+
+function systemHTML() {
+  const s = S.sys;
+  const upFmt = (sec) => { const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60); return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h ${m}m`; };
+  const top = `<div class="chips"><span class="label">Live System Stats</span><span class="sp"></span>
+    <button class="chip ${S.cfg.sysNotch ? 'on' : ''}" data-act="sysNotchToggle">Show on closed notch</button></div>`;
+  if (!s) return `<div class="col" style="flex:1;gap:10px">${top}<div class="note">${IC.system}<span>Sampling CPU, memory & network…</span></div></div>`;
+  const cpuPts = S.sysHist.map((x) => x.cpu);
+  const memPts = S.sysHist.map((x) => x.mem);
+  return `<div class="col" style="flex:1;gap:10px">${top}
+    <div class="sys-grid">
+      <div class="sys-card"><small>CPU</small><b class="mono" style="color:var(--mint)">${s.cpu}%</b><span>${S.battery ? `Battery ${s.battery.level}%` : 'AC Power'}</span></div>
+      <div class="sys-card"><small>Memory</small><b class="mono">${s.mem.pct}%</b><span>${fmtBytes(s.mem.used)} / ${fmtBytes(s.mem.total)}</span></div>
+      <div class="sys-card"><small>Network</small><b class="mono">↓ ${fmtSpeed(s.net.downBps)}</b><span>↑ ${fmtSpeed(s.net.upBps)}</span></div>
+      <div class="sys-card"><small>Disk & Uptime</small><b class="mono">${s.disk.total ? fmtBytes(s.disk.free) : '—'}</b><span>free · up ${upFmt(s.uptimeSec)}</span></div>
+    </div>
+    <div class="sys-spark">
+      <div class="col" style="width:92px"><small style="color:var(--mint);font-size:10.5px;font-weight:600">CPU 60s</small><small style="color:var(--rest);font-size:10.5px;font-weight:600">Mem 60s</small></div>
+      <div style="flex:1;position:relative;height:38px">
+        ${sparklineSVG(cpuPts, 'var(--mint)')}
+      </div>
+      <div style="flex:1;position:relative;height:38px">
+        ${sparklineSVG(memPts, 'var(--rest)')}
+      </div>
+    </div></div>`;
+}
+
+/* ================= Small Tools ================= */
+function toolsHTML() {
+  const sub = `<div class="chips">
+    ${[['color', 'Color', 'eyedropper'], ['calc', 'Calc', 'calc'], ['qr', 'QR', 'qr'], ['convert', 'Convert', 'globe']].map(([k, l, ic]) =>
+      `<button class="chip ${S.toolsSub === k ? 'on' : ''}" data-act="toolSub" data-m="${k}">${IC[ic]} ${l}</button>`).join('')}
+  </div>`;
+
+  if (S.toolsSub === 'color') {
+    const info = Tools.colorInfo(S.colorHex) || Tools.colorInfo('#5cdba8');
+    return `<div class="col" style="flex:1;gap:10px">${sub}
+      <div style="display:flex;gap:16px;align-items:center;flex:1">
+        <div class="col" style="gap:8px">
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="swatch" style="background:${esc(info.hex)}"></span>
+            <div class="field" style="width:120px;height:30px"><input id="colorIn" value="${esc(S.colorHex)}" placeholder="#5cdba8" autocomplete="off"></div>
+            ${typeof EyeDropper !== 'undefined' ? `<button class="chip on" data-act="pickColor">${IC.eyedropper} Pick</button>` : ''}
+          </div>
+          <div class="chips">${S.colorHist.map((c) => `<button class="color-chip" style="background:${esc(c)}" data-act="useColor" data-c="${esc(c)}" title="${esc(c)}"></button>`).join('')}</div>
+        </div>
+        <div class="vline"></div>
+        <div class="col" style="flex:1;gap:6px">
+          <div class="chips">
+            <button class="chip" data-act="copyVal" data-v="${esc(info.hex)}">${IC.copy} ${esc(info.hex)}</button>
+            <button class="chip" data-act="copyVal" data-v="${esc(info.rgb)}">${IC.copy} ${esc(info.rgb)}</button>
+            <button class="chip" data-act="copyVal" data-v="${esc(info.hsl)}">${IC.copy} ${esc(info.hsl)}</button>
+          </div>
+          <small style="color:var(--dim)">WCAG Contrast — White: <b class="mono">${info.contrastWhite}:1</b> · Black: <b class="mono">${info.contrastBlack}:1</b></small>
+        </div>
+      </div></div>`;
+  }
+
+  if (S.toolsSub === 'calc') {
+    const res = S.calcExpr.trim() ? Tools.calc(S.calcExpr) : null;
+    return `<div class="col" style="flex:1;gap:8px">${sub}
+      <div style="display:flex;gap:14px;flex:1;min-height:0">
+        <div class="col" style="flex:1;gap:8px">
+          <div class="field">${IC.calc}<input id="calcIn" placeholder="e.g. 1250*15%, 2^10, sqrt(2), 5!" value="${esc(S.calcExpr)}" autocomplete="off"></div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <button class="chip on" data-act="copyVal" data-v="${res?.ok ? esc(res.formatted) : ''}" ${res?.ok ? '' : 'disabled style="opacity:.4"'}>
+              ${res?.ok ? `${IC.copy} = ${esc(res.formatted)}` : res ? esc(res.error) : 'Type an expression, Enter to save'}
+            </button>
+          </div>
+        </div>
+        <div class="vline"></div>
+        <div class="col" style="width:240px;min-height:0;gap:4px">
+          <span class="label">History</span>
+          <div class="scroll">${S.calcHist.length ? S.calcHist.map((h) => `<div class="row" data-act="copyVal" data-v="${esc(h.res)}" title="Click to copy result"><span class="t"><b>${esc(h.expr)}</b></span><span class="d mono">= ${esc(h.res)}</span></div>`).join('') : '<div class="note"><span>Press Enter to save</span></div>'}</div>
+        </div>
+      </div></div>`;
+  }
+
+  if (S.toolsSub === 'qr') {
+    const lastTextClip = S.clips.find((c) => c.type === 'text')?.text || '';
+    const txt = S.qrText || lastTextClip || 'https://github.com/Hiroyki/nusa';
+    let svg = '';
+    try { svg = QR.toSVG(txt, 3); } catch { svg = '<span style="color:var(--late)">Text too long</span>'; }
+    return `<div class="col" style="flex:1;gap:8px">${sub}
+      <div style="display:flex;gap:14px;align-items:center;flex:1">
+        <div style="width:118px;height:118px;background:#fff;border-radius:10px;display:grid;place-items:center;overflow:hidden;flex:none" id="qrWrap">${svg.replace(/width="[^"]*" height="[^"]*"/, 'width="112" height="112"')}</div>
+        <div class="col" style="flex:1;gap:8px">
+          <div class="field">${IC.qr}<input id="qrIn" placeholder="Text or URL to encode…" value="${esc(S.qrText)}" autocomplete="off"></div>
+          <div class="chips">
+            <button class="chip on" data-act="copyQrSvg">${IC.copy} Copy SVG</button>
+            ${lastTextClip ? `<button class="chip" data-act="qrFromClip">Use last clipboard</button>` : ''}
+          </div>
+        </div>
+      </div></div>`;
+  }
+
+  // Convert + Timezones
+  const cats = Object.keys(Tools.UNIT_CATEGORIES);
+  const units = S.convCat === 'temperature' ? Tools.UNIT_CATEGORIES.temperature : Object.keys(Tools.UNIT_CATEGORIES[S.convCat]);
+  if (!units.includes(S.convFrom)) S.convFrom = units[0];
+  if (!units.includes(S.convTo)) S.convTo = units[1] || units[0];
+  const convRes = Tools.convertUnit(S.convVal, S.convFrom, S.convTo, S.convCat);
+  const convStr = Number.isFinite(convRes) ? String(Number(convRes.toPrecision(8))) : '—';
+  const now = new Date();
+
+  return `<div class="col" style="flex:1;gap:8px;min-height:0">${sub}
+    <div style="display:flex;gap:12px;flex:1;min-height:0">
+      <div class="col" style="width:270px;gap:6px">
+        <div class="chips" style="flex-wrap:wrap">${cats.map((c) => `<button class="chip ${S.convCat === c ? 'on' : ''}" data-act="convCat" data-c="${c}">${c}</button>`).join('')}</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <div class="field" style="flex:1;height:28px"><input id="convIn" value="${esc(S.convVal)}" autocomplete="off"></div>
+          <select id="convFrom" style="background:var(--chip);border:0;border-radius:8px;height:28px;padding:0 6px">${units.map((u) => `<option value="${u}" ${u === S.convFrom ? 'selected' : ''}>${u}</option>`).join('')}</select>
+          <button class="small-btn" data-act="convSwap" title="Swap">${IC.swap}</button>
+          <select id="convTo" style="background:var(--chip);border:0;border-radius:8px;height:28px;padding:0 6px">${units.map((u) => `<option value="${u}" ${u === S.convTo ? 'selected' : ''}>${u}</option>`).join('')}</select>
+        </div>
+        <button class="chip on" data-act="copyVal" data-v="${esc(convStr)}" style="align-self:flex-start">${IC.copy} = ${esc(convStr)} ${esc(S.convTo)}</button>
+      </div>
+      <div class="vline"></div>
+      <div class="col" style="flex:1;min-height:0;gap:6px">
+        <div style="display:flex;align-items:center;gap:8px;font-size:11px">
+          <span class="label">World Clock</span>
+          <input type="range" id="tzRange" min="-12" max="12" value="${S.tzOffset}" style="flex:1">
+          <span class="mono" style="width:36px;text-align:right">${S.tzOffset >= 0 ? '+' : ''}${S.tzOffset}h</span>
+        </div>
+        <div class="tz-grid">${Tools.TIMEZONE_CITIES.map((c) => {
+          const z = Tools.formatInZone(now, c.tz, S.tzOffset);
+          return `<div class="tz-card"><div><small>${esc(c.name)}</small><span style="font-size:10px;color:var(--faint)">${esc(z.date)}</span></div><b class="mono">${z.time}</b></div>`;
+        }).join('')}</div>
+      </div>
+    </div></div>`;
+}
+
+/* ================= Settings View ================= */
+function settingsHTML() {
+  const tog = (act, on, data = '') => `<button class="toggle ${on ? 'on' : ''}" data-act="${act}" ${data}></button>`;
+  return `<div class="col" style="flex:1;gap:8px;min-height:0">
+    <div class="chips">
+      <span class="label">Settings</span><span class="sp"></span>
+      <button class="chip" data-act="login">${S.loginAtBoot ? 'Start at login: On' : 'Start at login: Off'}</button>
+      <button class="chip" data-act="quit" style="color:var(--late)">Quit Nusa</button>
+      <button class="chip on" data-act="closeSettings">Done</button>
+    </div>
+    <div class="set-grid">
+      <div class="set-row"><span>Theme</span><select id="setTheme">${BUILTIN_THEMES.map((t) => `<option value="${t.id}" ${t.id === S.theme ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
+      <div class="set-row"><span>Location</span><select id="setCity"><option value="auto" ${S.autoPlace ? 'selected' : ''}>Auto (${esc(S.place.name)})</option>${Places.CITIES.map((c) => `<option value="${esc(c.name)}" ${!S.autoPlace && c.name === S.place.name ? 'selected' : ''}>${esc(c.name)} · ${c.zone}</option>`).join('')}</select></div>
+      <div class="set-row"><span>Clipboard history</span><div style="display:flex;gap:6px;align-items:center"><select id="setClipMode"><option value="text" ${S.cfg.clipsMode === 'text' ? 'selected' : ''}>Text</option><option value="files" ${S.cfg.clipsMode === 'files' ? 'selected' : ''}>Files</option><option value="all" ${S.cfg.clipsMode === 'all' ? 'selected' : ''}>All</option></select>${tog('cfgToggle', S.cfg.clipsEnabled, 'data-k="clipsEnabled"')}</div></div>
+      <div class="set-row"><span>Windows notifications</span><div style="display:flex;gap:6px;align-items:center">${S.cfg.notifMuted.length ? `<button class="chip" data-act="notifUnmuteAll">Unmute (${S.cfg.notifMuted.length})</button>` : ''}${tog('cfgToggle', S.cfg.notifEnabled, 'data-k="notifEnabled"')}</div></div>
+      <div class="set-row"><span>Notification body preview</span>${tog('cfgToggle', S.cfg.notifBody, 'data-k="notifBody"')}</div>
+      <div class="set-row"><span>Mic & camera dots</span>${tog('cfgToggle', S.cfg.privacyDots, 'data-k="privacyDots"')}</div>
+      <div class="set-row"><span>Live system stats tab</span>${tog('cfgToggle', S.cfg.sysEnabled, 'data-k="sysEnabled"')}</div>
+      <div class="set-row"><span>System stats on closed notch</span>${tog('cfgToggle', S.cfg.sysNotch, 'data-k="sysNotch"')}</div>
+      <div class="set-row"><span>Show Water tab</span>${tog('tabToggle', S.cfg.tabs.water !== false, 'data-k="water"')}</div>
+      <div class="set-row"><span>Show Timer tab</span>${tog('tabToggle', S.cfg.tabs.timer !== false, 'data-k="timer"')}</div>
+      <div class="set-row"><span>Show Tools tab</span>${tog('tabToggle', S.cfg.tabs.tools !== false, 'data-k="tools"')}</div>
+      <div class="set-row"><span>Show System tab</span>${tog('tabToggle', Boolean(S.cfg.tabs.system || S.cfg.sysEnabled), 'data-k="system"')}</div>
+    </div>
+  </div>`;
+}
+
+/* ================= Small Dropdown Menus ================= */
+function menuHTML() {
+  const m = S.menu;
+  const item = (label, act, data, on) => `<button class="${on ? 'on' : ''}" data-act="${act}" ${Object.entries(data).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')}>${esc(label)}</button>`;
+  let body = '';
+  if (m.type === 'city') body = item(S.autoPlace ? `Current location · ${S.locating ? 'locating…' : S.place.name}` : 'Current location', 'cityAuto', {}, S.autoPlace)
+    + `<div class="h">Cities</div>` + Places.CITIES.map((c) => item(`${c.name} · ${c.zone}`, 'city', { c: c.name }, !S.autoPlace && c.name === S.place.name)).join('');
+  if (m.type === 'wx' && S.weather) body = `<div class="h">${esc(S.place.name)} · ${wxLabel(S.weather.code)} · feels ${Math.round(S.weather.feels)}°</div>`
+    + S.weather.hours.filter((h) => h.time > Date.now() - 1800000).map((h) => `<button>${hhmm(new Date(h.time), S.place.tz)}  ${Math.round(h.temp)}°  rain ${h.rain}%</button>`).join('') + `<div class="h">Data: Open-Meteo</div>`;
+  return `<div class="menu" style="left:${m.x}px;top:${m.y}px">${body}</div>`;
+}
+
+function openMenu(type, el, extra = {}) {
+  const r = el.getBoundingClientRect(), box = $('#island').getBoundingClientRect();
+  S.menu = { type, x: Math.min(r.left - box.left, box.width - 220), y: r.bottom - box.top + 4, ...extra };
+  render(true);
+  const el2 = $('.menu');
+  if (el2) { S.menu.h = el2.offsetHeight; render(); }
+}
+
+/* ================= Weather & Location ================= */
 function setPlace(p) {
   S.place = p;
-  alarm = new Prayer.Alarm(p);
-  alarm.check(new Date());
   loadWeather();
   render(true);
 }
 
-/** Mode Current location: tanya lokasi ke proses utama (Windows Location → cadangan IP). */
 async function locateUser() {
   if (!S.autoPlace || S.locating) return;
   S.locating = true;
   const r = await nusa.locate().catch(() => null);
   S.locating = false;
-  if (!S.autoPlace) return; // keburu pilih kota manual
+  if (!S.autoPlace) return;
   if (!r) return render(true);
-  // Geser < ~3 km (WiFi kadang ngasih titik beda dikit) = masih di tempat yang sama: nama & jadwal nggak diganti-ganti
   const last = LS.get('autoPlace', null);
   const near = last && last.tz === r.tz && Math.abs(last.lat - r.lat) < 0.03 && Math.abs(last.lon - r.lon) < 0.03;
   if (!near) LS.set('autoPlace', r);
-  const p = Prayer.place(near ? last : r);
+  const p = Places.place(near ? last : r);
   if (p.name !== S.place.name || p.lat !== S.place.lat || p.lon !== S.place.lon || p.tz !== S.place.tz) setPlace(p);
   else render(true);
 }
-function checkPrayer() {
-  const e = alarm.check(new Date());
-  if (!e) return;
-  const time = hhmm(e.date, S.place.tz);
-  if (e.type === 'soon') { if (S.soon) showFlash({ kind: 'prayer', name: e.title, time, soon: true }, 6); return; }
-  if (S.sound !== 'silent' && S.media?.playing) nusa.media('pause');
-  playPrayerSound();
-  S.expanded = false;
-  showFlash({ kind: 'prayer', name: e.title, time, soon: false }, 45);
-}
 
-function playPrayerSound() {
-  stopPrayerSound();
-  if (S.sound === 'adzan') { const a = $('#adhan'); a.currentTime = 0; a.play().catch(() => {}); }
-  else if (S.sound === 'tone') chime([660, 990, 1320]);
-}
-const stopPrayerSound = () => { const a = $('#adhan'); a.pause(); };
-
-/** Bunyi pengingat kecil, dibikin langsung (nggak perlu file suara). */
 function chime(freqs) {
   try {
     const ctx = new AudioContext();
@@ -629,155 +1148,6 @@ function chime(freqs) {
     setTimeout(() => ctx.close(), 2500);
   } catch {}
 }
-
-/* ---------- Quran ---------- */
-
-const QFONTS = ['Scheherazade New', 'Amiri Quran'];
-const RECITERS = [['ar.alafasy', 'Mishary Alafasy'], ['ar.husary', 'Mahmoud Al-Husary'], ['ar.minshawi', 'Al-Minshawi'], ['ar.mahermuaiqly', 'Maher Al-Muaiqly']];
-
-async function loadQuran() {
-  if (S.q.book) return;
-  S.q.book = JSON.parse(await nusa.asset('quran.json'));
-  if (S.expanded && S.tab === 'quran') render(true);
-}
-
-function quranHTML() {
-  const b = S.q.book;
-  if (!b) { loadQuran(); return `<div class="note"><span>Loading Quran…</span></div>`; }
-  const s = b.surahs[S.q.surah - 1];
-  const mark = S.q.mark;
-  const markS = mark && b.surahs[mark.s - 1];
-  const tr = S.q.english ? 2 : 1;
-  return `<div class="col" style="flex:1;gap:8px;--qfont:'${S.q.font}'">
-    <div class="chips"><button class="surah" data-act="surahMenu"><em>${s.n}</em>${esc(s.tr)} ${IC.chevron}</button>
-      <span style="color:var(--dim);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.en)} · ${s.v.length} verses · ${s.t === 'Meccan' ? 'Makkah' : 'Madinah'}</span><span class="sp"></span>
-      ${markS ? `<button class="chip" data-act="goMark">${IC.bookmark} ${esc(markS.tr)} ${mark.a}</button>` : ''}
-      <span style="font-family:var(--qfont);font-size:22px;white-space:nowrap">${esc(s.ar)}</span>
-      <button class="cbtn mint" data-act="recite" title="Listen">${S.reciting && !$('#recite').paused ? IC.pause : IC.play}</button>
-      ${S.reciting ? `<button class="cbtn" data-act="reciteStop" title="Stop">${IC.stop}</button>` : ''}
-      <button class="cbtn" data-act="qMenu" title="Font & reciter" style="font-weight:700;font-size:12px">Aa</button>
-      <button class="chip ${S.q.english ? '' : 'on'}" data-act="qLang" data-en="0">ID</button><button class="chip ${S.q.english ? 'on' : ''}" data-act="qLang" data-en="1">EN</button>
-      <button class="cbtn" data-act="surahGo" data-d="-1" ${s.n === 1 ? 'disabled style="opacity:.3"' : ''}>${IC.left}</button><button class="cbtn" data-act="surahGo" data-d="1" ${s.n === 114 ? 'disabled style="opacity:.3"' : ''}>${IC.right}</button></div>
-    <div class="scroll" id="qScroll">${s.n !== 1 && s.n !== 9 ? `<div class="bism" id="ayah-0">${esc(b.bismillah)}</div>` : ''}
-      ${s.v.map((v, i) => {
-        const n = i + 1, marked = mark && mark.s === s.n && mark.a === n, live = S.reciting && S.reciting.s === s.n && S.reciting.a === n;
-        return `<div class="ayah ${marked ? 'mark' : ''} ${live ? 'live' : ''}" id="ayah-${n}" data-act="mark" data-a="${n}" title="Click to mark as last read">
-          <div class="num"><span>${marked ? IC.bookmark : n}</span><button data-act="reciteFrom" data-a="${n}" title="Listen from this verse">${live ? IC.wave : IC.play}</button></div>
-          <div style="flex:1"><div class="ar">${esc(v[0])}</div><div class="tr">${esc(v[tr])}</div></div></div>`;
-      }).join('')}</div></div>`;
-}
-
-function scrollQuran(smooth, ayah) {
-  const target = ayah ?? (S.q.mark && S.q.mark.s === S.q.surah ? S.q.mark.a : 0);
-  const el = $(`#ayah-${target}`) || $('#ayah-1');
-  if (el) el.scrollIntoView({ block: target ? 'center' : 'start', behavior: smooth ? 'smooth' : 'auto' });
-}
-
-function globalAyah(s, a) { return S.q.book.surahs.slice(0, s - 1).reduce((n, x) => n + x.v.length, 0) + a; }
-
-function recite(s, a) {
-  if (S.media?.playing) nusa.media('pause');
-  S.reciting = { s, a };
-  const audio = $('#recite');
-  audio.src = `https://cdn.islamic.network/quran/audio/128/${LS.get('reciter', 'ar.alafasy')}/${globalAyah(s, a)}.mp3`;
-  audio.play().catch(() => {});
-  if (S.expanded && S.tab === 'quran') { render(true); scrollQuran(true, a); }
-}
-
-$('#recite').addEventListener('ended', () => {
-  const r = S.reciting;
-  if (!r) return;
-  const count = S.q.book.surahs[r.s - 1].v.length;
-  if (r.a >= count) { S.reciting = null; return S.expanded && render(true); }
-  recite(r.s, r.a + 1);
-});
-
-/* ---------- Clips ---------- */
-
-function clipsHTML() {
-  if (!S.clips.length) return `<div class="note">${IC.clips}<span>Text you copy will appear here</span></div>`;
-  return `<div class="cards" style="flex:1">${S.clips.map((c, i) => `<button class="card ${S.copied === i ? 'ok' : ''}" data-act="copy" data-i="${i}"><p>${esc(c.trim())}</p><small>${S.copied === i ? 'Copied' : c.length + ' characters'}</small></button>`).join('')}</div>`;
-}
-
-/* ---------- Rak (Tray): file yang ditaruh buat nanti ---------- */
-
-const midTrim = (s, n = 16) => s.length <= n ? s : s.slice(0, Math.ceil(n / 2) - 1) + '…' + s.slice(-(Math.floor(n / 2)));
-
-function trayHTML() {
-  const items = S.shelf;
-  const inner = items.length
-    ? `<div class="shelf">${items.map((p, i) => {
-        const f = S.files[p];
-        return `<div class="sitem" draggable="true" data-act="fileOpen" data-i="${i}" title="${esc(p)}\nClick to open · drag out to use">
-          ${f?.icon ? `<img src="${esc(f.icon)}" alt="">` : `<span class="ph">${IC.clips}</span>`}<small>${esc(midTrim(f?.name || p.split(/[\\/]/).pop()))}</small>
-          <button class="rm" data-act="fileRemove" data-i="${i}" title="Remove from Tray">${IC.xCircle}</button></div>`;
-      }).join('')}</div>
-      <div class="shelf-side"><button class="sbtn" data-act="fileShow" title="Show the last file in its folder">${IC.clips}<span>Show</span></button>
-        <button class="sbtn" data-act="trayClear" title="Remove everything from Tray">${IC.x}<span>Clear</span></button></div>`
-    : `<div class="note">${IC.trayIn}<span>Drop files here to keep them for later</span></div>`;
-  return `<div class="drop ${S.dropping ? 'on' : ''}">${inner}</div>`;
-}
-
-async function addToShelf(p) {
-  if (!p || S.shelf.includes(p)) return;
-  const info = await nusa.fileInfo(p);
-  if (!info) return;
-  S.files[p] = info;
-  S.shelf = [...S.shelf, p];
-  LS.set('shelf', S.shelf);
-  if (S.expanded && S.tab === 'tray') render(true);
-}
-
-function removeFromShelf(p) {
-  S.shelf = S.shelf.filter((x) => x !== p);
-  LS.set('shelf', S.shelf);
-  render(true);
-}
-
-/** Pas nyala: ambil ikon tiap file, yang udah dihapus/dipindah dibuang dari Rak. */
-async function loadShelf() {
-  const keep = [];
-  for (const p of S.shelf) {
-    const info = await nusa.fileInfo(p);
-    if (info) { S.files[p] = info; keep.push(p); }
-  }
-  S.shelf = keep;
-  LS.set('shelf', keep);
-  if (S.expanded && S.tab === 'tray') render(true);
-}
-
-/* ---------- menu kecil di dalam panel ---------- */
-
-function menuHTML() {
-  const m = S.menu;
-  const item = (label, act, data, on) => `<button class="${on ? 'on' : ''}" data-act="${act}" ${Object.entries(data).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')}>${esc(label)}</button>`;
-  let body = '';
-  if (m.type === 'city') body = item(S.autoPlace ? `Current location · ${S.locating ? 'locating…' : S.place.name}` : 'Current location', 'cityAuto', {}, S.autoPlace)
-    + `<div class="h">Cities</div>` + Prayer.CITIES.map((c) => item(`${c.name} · ${c.zone}`, 'city', { c: c.name }, !S.autoPlace && c.name === S.place.name)).join('');
-  if (m.type === 'sound') body = [['adzan', 'Adzan'], ['tone', 'Tone'], ['silent', 'Silent']].map(([k, l]) => item(l, 'sound', { s: k }, S.sound === k)).join('')
-    + `<div class="h"></div>` + item('Remind me 10 minutes before', 'soonToggle', {}, S.soon) + item('Stop sound', 'soundStop', {}, false);
-  if (m.type === 'surah') body = S.q.book.surahs.map((s) => item(`${s.n}. ${s.tr} · ${s.en}`, 'surah', { n: s.n }, s.n === S.q.surah)).join('');
-  if (m.type === 'q') body = `<div class="h">Arabic font</div>` + QFONTS.map((f) => item(f, 'qFont', { f }, S.q.font === f)).join('')
-    + `<div class="h">Reciter</div>` + RECITERS.map(([id, n]) => item(n, 'reciter', { r: id }, LS.get('reciter', 'ar.alafasy') === id)).join('');
-  if (m.type === 'theme') body = BUILTIN_THEMES.map((t) => item(t.name, 'theme', { id: t.id }, t.id === S.theme)).join('');
-  if (m.type === 'gear') body = item(`Theme · ${themeById(S.theme).name}`, 'themeMenu', {}, false)
-    + `<div class="h"></div>` + item('Start at login', 'login', {}, m.login) + item('Quit Nusa', 'quit', {}, false);
-  if (m.type === 'wx' && S.weather) body = `<div class="h">${esc(S.place.name)} · ${wxLabel(S.weather.code)} · feels ${Math.round(S.weather.feels)}°</div>`
-    + S.weather.hours.filter((h) => h.time > Date.now() - 1800000).map((h) => `<button>${hhmm(new Date(h.time), S.place.tz)}  ${Math.round(h.temp)}°  rain ${h.rain}%</button>`).join('') + `<div class="h">Data: Open-Meteo</div>`;
-  return `<div class="menu" style="left:${m.x}px;top:${m.y}px">${body}</div>`;
-}
-
-function openMenu(type, el, extra = {}) {
-  const r = el.getBoundingClientRect(), box = $('#island').getBoundingClientRect();
-  S.menu = { type, x: Math.min(r.left - box.left, box.width - 220), y: r.bottom - box.top + 4, ...extra };
-  render(true);
-  // Ukur tinggi dropdown yang beneran, terus panjangin panel segitu
-  const el2 = $('.menu');
-  if (el2) { S.menu.h = el2.offsetHeight; render(); }
-  if (type === 'surah' || type === 'theme') $('.menu .on')?.scrollIntoView({ block: 'center' });
-}
-
-/* ================= cuaca ================= */
 
 const wxIcon = (c, day) => c === 0 ? (day ? 'sun' : 'moonStar') : c <= 2 ? (day ? 'cloudSun' : 'cloud') : c === 3 ? 'cloud' : c === 45 || c === 48 ? 'fog'
   : c >= 95 ? 'storm' : (c >= 51 && c <= 67) || (c >= 80 && c <= 82) ? 'rain' : 'cloud';
@@ -804,8 +1174,7 @@ async function loadWeather() {
   } catch {}
 }
 
-/* ================= fokus & timer ================= */
-
+/* ================= Focus & Quick Timer ================= */
 const todayKey = () => 'focus-' + new Date().toISOString().slice(0, 10);
 const focusToday = () => LS.get(todayKey(), 0);
 let focusDone = null, timerDone = null;
@@ -840,8 +1209,7 @@ function startTimer(m) {
   render(true);
 }
 
-/* ================= bagian yang diperbarui tiap detik ================= */
-
+/* ================= Live 1s Updates ================= */
 const LIVE = {
   timerLeft: () => S.timer ? clock((S.timer.end - Date.now()) / 1000 + 0.999) : '',
   focusLeft: () => S.focus ? clock((S.focus.end - Date.now()) / 1000 + 0.999) : '',
@@ -851,8 +1219,13 @@ const LIVE = {
   mtime: () => { const m = S.media; if (!m?.duration) return ''; return `<span>${clock(Math.min(S.scrub ?? mediaPos(), m.duration))}</span><span>${clock(m.duration)}</span>`; },
   volLevel: () => S.audio ? `<i style="width:${(S.audio.muted ? 0 : S.audio.vol) * 100}%"></i>` : '',
   volFlash: volFlashHTML,
-  agenda: agendaHTML, wxCard: wxCardHTML, prTop: prTopHTML, prTrack: prTrackHTML,
-  prMarks: () => { const t = Prayer.times(S.place, new Date()); return `Imsak ${hhmm(t[0].date, S.place.tz)} · Sunrise ${hhmm(t[2].date, S.place.tz)}`; },
+  agenda: agendaHTML, wxCard: wxCardHTML,
+  cdTime: () => clock(TimerLib.remainingCountdown(S.cd) / 1000 + (S.cd.running ? 0.999 : 0)),
+  swTime: () => {
+    const ms = TimerLib.elapsedStopwatch(S.sw);
+    return `${clock(ms / 1000)}.${pad(Math.floor((ms % 1000) / 10))}`;
+  },
+  pomoTime: () => clock(TimerLib.remainingPomodoro(S.pomo) / 1000 + (S.pomo.running ? 0.999 : 0)),
 };
 
 const mediaPos = () => { const m = S.media; return (m?.position || 0) + (m?.playing ? (Date.now() - m.at) / 1000 : 0); };
@@ -864,24 +1237,20 @@ function live() {
   }
 }
 
-/** Notch kosong: gantian cuaca, jam, sholat berikutnya tiap 5 detik. */
 let idleStep = -1;
 function idleHTML() {
-  const items = [...(S.weather ? ['wx'] : []), 'clock', 'prayer'];
+  const items = [...(S.weather ? ['wx'] : []), 'clock', ...(S.cfg.sysNotch && S.sys ? ['sys'] : [])];
   const step = Math.floor(Date.now() / 5000);
   const k = items[step % items.length];
   const anim = step !== idleStep ? ' style="animation:morphIn .4s var(--soft) both;display:inline-flex;gap:5px;align-items:center"' : ' style="display:inline-flex;gap:5px;align-items:center"';
   idleStep = step;
   if (k === 'wx') return `<span${anim}>${IC[wxIcon(S.weather.code, S.weather.day)]}<span class="mono">${Math.round(S.weather.temp)}°</span></span>`;
-  if (k === 'clock') return `<span${anim}><span style="color:var(--dim)">${IC.clock}</span><span class="mono">${hhmm(new Date())}</span></span>`;
-  const n = Prayer.next(S.place, new Date());
-  return `<span${anim}><span style="color:var(--mint)">${IC.moonStar}</span><span class="mono">${n.title} ${hhmm(n.date, S.place.tz)}</span></span>`;
+  if (k === 'sys') return `<span${anim}><span style="color:var(--mint)">${IC.system}</span><span class="mono">${S.sys.cpu}% · ↓${fmtSpeed(S.sys.net.downBps)}</span></span>`;
+  return `<span${anim}><span style="color:var(--dim)">${IC.clock}</span><span class="mono">${hhmm(new Date())}</span></span>`;
 }
 
-/* ================= kejadian ================= */
-
+/* ================= IPC Events ================= */
 let closeTimer = null;
-// Minggir buat toolbar lain di tengah atas (Windows): memudar & tembus klik, pop-up penting tetap muncul
 nusa.on('yield', (on) => {
   S.yielded = on;
   if (on) { S.hover = false; if (!S.pinned) S.expanded = false; }
@@ -897,7 +1266,6 @@ nusa.on('hover', (over) => {
 });
 
 nusa.on('open-panel', () => { S.expanded = true; nusa.focus(); render(true); });
-// Impor tema dari klik-kanan notch / menu tray (dialognya jalan di proses utama)
 window.addEventListener('blur', () => { if (S.expanded && !S.pinned && !S.menu) { S.expanded = false; render(); } });
 
 nusa.on('media', (st) => {
@@ -906,8 +1274,6 @@ nusa.on('media', (st) => {
   if (st?.art && st.art !== before?.art) computeTint(st.art);
   if (!st?.art) S.tint = null;
   const newTrack = before?.title && st?.title && st.title !== before.title && st.playing;
-  // Posisi lagu jalan sendiri lewat live() tiap detik. Bangun ulang isi cuma kalau lagu/statusnya beneran berubah;
-  // kalau tiap laporan dibangun ulang, animasi masuknya keulang terus dan panel kelihatan geter & kedip.
   const changed = mediaSig(before) !== mediaSig(st);
   if (newTrack && !S.expanded && S.focus?.phase !== 'focus') showFlash({ kind: 'track' }, 2.6);
   else if (lastKey === 'x:music') {
@@ -916,25 +1282,28 @@ nusa.on('media', (st) => {
   }
   else render(changed && (lastKey === 'music' || lastKey === 'x:home'));
 });
-
 const mediaSig = (x) => JSON.stringify(x && [x.title, x.artist, x.album, x.art, x.hiArt, x.icon, x.app, x.playing, x.canSeek, x.noTimeline, Math.round(x.duration || 0)]);
 
-nusa.on('clip', (t) => {
-  if (typeof t !== 'string' || !t.trim() || S.clips[0] === t) return;
-  S.clips = [t, ...S.clips.filter((c) => c !== t)].slice(0, 20);
-  if (S.expanded && S.tab === 'clips') render(true);
+nusa.on('clip', (raw) => {
+  if (!S.cfg.clipsEnabled) return;
+  const item = typeof raw === 'string' ? { type: 'text', text: raw } : raw;
+  if (!item) return;
+  const sig = item.type === 'text' ? 't:' + item.text : item.type === 'image' ? 'i:' + item.hash : 'f:' + (item.files || []).map((f) => f.path).join('|');
+  if (item.type === 'text' && !item.text?.trim()) return;
+  const entry = { ...item, id: uid(), sig };
+  if (S.clips[0]?.sig === sig) return;
+  S.clips = [entry, ...S.clips.filter((c) => c.sig !== sig)].slice(0, 30);
+  if (S.expanded && !S.settingsOpen && S.tab === 'clips') render(true);
 });
-
-/* ---------- volume sistem & perangkat audio ---------- */
 
 let volDragging = false;
 nusa.on('audio', (a) => {
   const before = S.audio;
-  if (volDragging && a) a = { ...a, vol: S.audio?.vol ?? a.vol }; // jangan loncat-loncat pas lagi digeser
+  if (volDragging && a) a = { ...a, vol: S.audio?.vol ?? a.vol };
   S.audio = a;
   if (!a) return render(lastKey.startsWith('x:'));
   const changed = before && before.id === a.id && (Math.abs(before.vol - a.vol) > 0.004 || before.muted !== a.muted);
-  if (changed && !S.expanded && !['prayer', 'task', 'focusEnd', 'device'].includes(S.flash?.kind)) showFlash({ kind: 'volume', level: a.vol, muted: a.muted }, 1.6);
+  if (changed && !S.expanded && !['task', 'focusEnd', 'device', 'phoneDrop', 'waterRemind', 'timerDone', 'notif'].includes(S.flash?.kind)) showFlash({ kind: 'volume', level: a.vol, muted: a.muted }, 1.6);
   if (S.expanded && (!before || before.muted !== a.muted || before.id !== a.id)) render(true);
   else live();
 });
@@ -944,8 +1313,55 @@ nusa.on('device', (d) => {
   showFlash({ kind: 'device', name: d.name.replace(/^.*\((.*)\)\s*$/, '$1') || d.name, detail: d.detail }, 4);
 });
 
-/* ---------- geser: posisi lagu & volume ---------- */
+nusa.on('system', (snap) => {
+  S.sys = snap;
+  if (snap) {
+    S.sysHist.push({ cpu: snap.cpu, mem: snap.mem.pct });
+    if (S.sysHist.length > 60) S.sysHist.shift();
+  }
+  if (S.expanded && !S.settingsOpen && S.tab === 'system') render(true);
+  else live();
+});
 
+nusa.on('privacy', (st) => {
+  const prev = S.privacy;
+  S.privacy = st || { mic: { active: false, app: null }, cam: { active: false, app: null } };
+  if (S.cfg.privacyDots && !S.expanded) {
+    if (!prev.cam?.active && S.privacy.cam?.active) showFlash({ kind: 'privacy', kindName: 'Camera', app: S.privacy.cam.app }, 3.5);
+    else if (!prev.mic?.active && S.privacy.mic?.active) showFlash({ kind: 'privacy', kindName: 'Microphone', app: S.privacy.mic.app }, 3.5);
+  }
+  render(true);
+});
+
+nusa.on('notif', (n) => {
+  if (!S.cfg.notifEnabled || !n) return;
+  if (n.error === 'denied') {
+    S.cfg.notifEnabled = false;
+    saveCfg();
+    showFlash({ kind: 'notif', app: 'Nusa', title: 'Notification access denied', body: 'Enable in Windows Settings' }, 5);
+    return;
+  }
+  if (S.cfg.notifMuted.includes(n.app)) return;
+  if (!S.expanded && S.focus?.phase !== 'focus') {
+    showFlash({ kind: 'notif', app: n.app, title: n.title, body: n.body }, 5);
+  }
+});
+
+nusa.on('phonedrop-state', (st) => {
+  S.phoneDrop = st?.active ? { active: true, url: st.url } : { active: false, url: null };
+  if (S.expanded && !S.settingsOpen && S.tab === 'tray') render(true);
+});
+nusa.on('phonedrop-request', (req) => {
+  if (!req) return;
+  const names = (req.files || []).map((f) => f.name).slice(0, 3).join(', ');
+  if (!S.pinned) S.expanded = false;
+  showFlash({ kind: 'phoneDrop', reqId: req.id, device: req.device, count: (req.files || []).length, names }, 45);
+});
+nusa.on('phonedrop-files', async (paths) => {
+  for (const p of (paths || [])) await addToShelf(p);
+});
+
+/* ================= Dragging, Seeking, Swiping ================= */
 function dragOn(el, onMove, onEnd) {
   const at = (e) => { const r = el.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
   const move = (e) => onMove(at(e));
@@ -972,13 +1388,11 @@ document.addEventListener('pointerdown', (e) => {
   }
 });
 
-/* ---------- usap dua jari di notch: kiri = lagu berikutnya, kanan = sebelumnya ---------- */
-
 const swipe = { total: 0, fired: false, idle: null };
 document.addEventListener('wheel', (e) => {
   if (S.expanded || !S.media?.title || !e.target.closest('#island')) return;
   clearTimeout(swipe.idle);
-  swipe.idle = setTimeout(() => { swipe.total = 0; swipe.fired = false; }, 220); // jeda = usapan selesai
+  swipe.idle = setTimeout(() => { swipe.total = 0; swipe.fired = false; }, 220);
   if (swipe.fired || Math.abs(e.deltaX) < Math.abs(e.deltaY)) return;
   swipe.total += e.deltaX;
   if (Math.abs(swipe.total) < 45) return;
@@ -990,22 +1404,18 @@ document.addEventListener('wheel', (e) => {
   setTimeout(() => { island.style.translate = ''; }, 140);
 }, { passive: true });
 
-/* ---------- klik kanan notch: Open at login / Quit ---------- */
-
 document.addEventListener('contextmenu', (e) => {
   if (e.target.closest('input, textarea')) return;
   e.preventDefault();
   if (e.target.closest('#island')) nusa.contextMenu();
 });
 
-/* ---------- seret file ke notch → langsung buka Rak ---------- */
-
 const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
 document.addEventListener('dragover', (e) => { e.preventDefault(); if (hasFiles(e)) e.dataTransfer.dropEffect = 'copy'; });
 document.addEventListener('dragenter', (e) => {
   if (!hasFiles(e)) return;
   e.preventDefault();
-  if (!S.expanded || S.tab !== 'tray' || !S.dropping) { S.expanded = true; S.tab = 'tray'; S.dropping = true; render(true); }
+  if (!S.expanded || S.tab !== 'tray' || !S.dropping) { S.expanded = true; S.settingsOpen = false; S.tab = 'tray'; S.dropping = true; render(true); }
 });
 document.addEventListener('dragleave', (e) => {
   if (e.relatedTarget && document.documentElement.contains(e.relatedTarget)) return;
@@ -1015,19 +1425,36 @@ document.addEventListener('drop', async (e) => {
   e.preventDefault();
   S.dropping = false;
   const paths = [...(e.dataTransfer?.files || [])].map((f) => nusa.filePath(f)).filter(Boolean);
-  // File .json = tema: impor & langsung pakai. Sisanya masuk Rak.
   for (const p of paths) await addToShelf(p);
   if (S.expanded) render(true);
 });
 document.addEventListener('dragstart', (e) => {
+  if (e.target.id === 'dragSelBtn') {
+    e.preventDefault();
+    nusa.trayDragMany(S.shelfSel);
+    return;
+  }
+  const clipCard = e.target.closest?.('[data-clip-id]');
+  if (clipCard) {
+    e.preventDefault();
+    const c = findClip(clipCard.dataset.clipId);
+    if (c) nusa.clipDrag(c);
+    return;
+  }
   const it = e.target.closest?.('.sitem');
   if (!it) return;
   e.preventDefault();
-  nusa.fileDrag(S.shelf[+it.dataset.i]);
+  if (it.dataset.ni != null) {
+    const n = S.shelfNotes[+it.dataset.ni];
+    if (n) nusa.trayDragText(n.text);
+  } else if (it.dataset.i != null) {
+    const p = S.shelf[+it.dataset.i];
+    if (S.shelfSel.length > 1 && S.shelfSel.includes(p)) nusa.trayDragMany(S.shelfSel);
+    else nusa.fileDrag(p);
+  }
 });
 
-/* ---------- cermin kamera ---------- */
-
+/* ================= Mirror & Cover Tint ================= */
 async function toggleMirror() {
   if (S.mirror?.stream) return stopMirror(true);
   try {
@@ -1042,7 +1469,6 @@ function stopMirror(rerender) {
   if (rerender) render(true);
 }
 
-/** Warna paling hidup dari sampul (sampul dari server lain bisa nolak dibaca, ya udah tanpa warna). */
 function computeTint(src) {
   const img = new Image();
   img.crossOrigin = 'anonymous';
@@ -1066,27 +1492,94 @@ function computeTint(src) {
   img.src = src;
 }
 
+/* ================= Inputs & Clicks ================= */
 document.addEventListener('input', (e) => {
-  if (e.target.id === 'musicQ') { S.music.query = e.target.value; musicSearch(); }
-  if (e.target.id === 'taskIn') {
+  const id = e.target.id;
+  if (id === 'musicQ') { S.music.query = e.target.value; musicSearch(); }
+  else if (id === 'taskIn') {
     S.taskText = e.target.value;
     const due = S.taskPick?.[1] ?? TaskParser.parse(S.taskText).due;
     $('#taskPreview').innerHTML = S.taskText && due ? `<span class="chip on">${IC.bell}${dueText(new Date(due))}</span>` : '';
+  } else if (id === 'clipQ') { S.clipQuery = e.target.value; render(true); $('#clipQ')?.focus(); }
+  else if (id === 'clipSnip') { S.clipSnippet = e.target.value; }
+  else if (id === 'noteIn') { S.noteText = e.target.value; }
+  else if (id === 'colorIn') {
+    S.colorHex = e.target.value;
+    if (Tools.colorInfo(S.colorHex)) render(true);
+    $('#colorIn')?.focus();
+  } else if (id === 'calcIn') {
+    S.calcExpr = e.target.value;
+    render(true);
+    const el = $('#calcIn');
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  } else if (id === 'qrIn') {
+    S.qrText = e.target.value;
+    render(true);
+    const el = $('#qrIn');
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  } else if (id === 'convIn') {
+    S.convVal = e.target.value;
+    render(true);
+    const el = $('#convIn');
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  } else if (id === 'tzRange') {
+    S.tzOffset = +e.target.value;
+    render(true);
   }
 });
+
+document.addEventListener('change', (e) => {
+  const id = e.target.id;
+  if (id === 'convFrom') { S.convFrom = e.target.value; render(true); }
+  else if (id === 'convTo') { S.convTo = e.target.value; render(true); }
+  else if (id === 'wGoal' || id === 'wSip' || id === 'wBottle' || id === 'wStart' || id === 'wEnd') {
+    const val = Math.max(1, Number(e.target.value) || 0);
+    const key = { wGoal: 'goalMl', wSip: 'sipMl', wBottle: 'bottleMl', wStart: 'startHour', wEnd: 'endHour' }[id];
+    S.water = { ...S.water, [key]: id === 'wStart' || id === 'wEnd' ? Math.min(24, Math.max(0, Number(e.target.value) || 0)) : val };
+    saveWater(); render(true);
+  } else if (id === 'setTheme') {
+    S.theme = e.target.value; LS.set('theme', S.theme); applyTheme(); render(true);
+  } else if (id === 'setCity') {
+    const v = e.target.value;
+    if (v === 'auto') { S.autoPlace = true; LS.set('city', 'auto'); locateUser(); }
+    else { S.autoPlace = false; LS.set('city', v); setPlace(Places.city(v)); }
+  } else if (id === 'setClipMode') {
+    S.cfg.clipsMode = e.target.value; saveCfg(); render(true);
+  }
+});
+
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && e.target.id === 'taskIn') addTask();
-  if (e.key === 'Escape') { if (S.menu) { S.menu = null; render(true); } else if (S.expanded) { S.expanded = false; render(); } }
+  if (e.key === 'Enter') {
+    if (e.target.id === 'taskIn') addTask();
+    else if (e.target.id === 'noteIn' && S.noteText.trim()) {
+      S.shelfNotes = [{ text: S.noteText.trim() }, ...S.shelfNotes];
+      S.noteText = ''; LS.set('shelfNotes', S.shelfNotes); render(true);
+    } else if (e.target.id === 'clipSnip' && S.clipSnippet.trim()) {
+      const entry = { id: uid(), type: 'text', text: S.clipSnippet.trim(), sig: 't:' + S.clipSnippet.trim() };
+      S.pinnedClips = [entry, ...S.pinnedClips];
+      S.clipSnippet = ''; LS.set('pinnedClips', S.pinnedClips); render(true);
+    } else if (e.target.id === 'calcIn') {
+      const res = Tools.calc(S.calcExpr);
+      if (res.ok) {
+        S.calcHist = [{ expr: S.calcExpr, res: res.formatted }, ...S.calcHist].slice(0, 12);
+        LS.set('calcHist', S.calcHist); render(true);
+      }
+    }
+  }
+  if (e.key === 'Escape') {
+    if (S.menu) { S.menu = null; render(true); }
+    else if (S.settingsOpen) { S.settingsOpen = false; render(true); }
+    else if (S.expanded) { S.expanded = false; render(); }
+  }
 });
 
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-act]');
   if (S.menu && !e.target.closest('.menu')) { S.menu = null; if (!el || el.dataset.act.endsWith('Menu')) return render(true); }
   if (!el) {
-    // Klik notch kecil: buka panel
     if (!S.expanded && e.target.closest('#island')) {
-      if (S.flash?.kind === 'prayer') { stopPrayerSound(); S.flash = null; return render(); }
       if (S.flash?.kind === 'task') { S.flash = null; S.tab = 'tasks'; }
+      else if (S.flash?.kind === 'notif') { S.flash = null; nusa.notifSettings(); return render(); }
       S.expanded = true; nusa.focus(); render(true);
     }
     return;
@@ -1094,28 +1587,49 @@ document.addEventListener('click', (e) => {
   const d = el.dataset;
   const task = () => S.tasks.find((t) => t.id === d.id);
   const A = {
-    tab: () => { S.tab = d.tab; LS.set('tab', S.tab); S.menu = null; render(true); },
+    tab: () => { S.settingsOpen = false; S.tab = d.tab; LS.set('tab', S.tab); S.menu = null; render(true); },
     pin: () => { S.pinned = !S.pinned; render(true); },
-    gear: async () => openMenu('gear', el, { login: await nusa.loginItem() }),
-    login: async () => { await nusa.loginItem(!S.menu?.login); S.menu = null; render(true); },
+    gear: async () => { S.loginAtBoot = await nusa.loginItem(); S.settingsOpen = !S.settingsOpen; S.menu = null; render(true); },
+    closeSettings: () => { S.settingsOpen = false; render(true); },
+    login: async () => { S.loginAtBoot = await nusa.loginItem(!S.loginAtBoot); render(true); },
     quit: () => window.close(),
-    themeMenu: () => openMenu('theme', el),
-    theme: () => { S.theme = d.id; LS.set('theme', d.id); applyTheme(); S.menu = null; render(true); },
-    timer: () => startTimer(+d.m), timerStop: () => { clearTimeout(timerDone); S.timer = null; render(true); },
+    cfgToggle: () => { S.cfg[d.k] = !S.cfg[d.k]; saveCfg(); render(true); },
+    tabToggle: () => { S.cfg.tabs[d.k] = !S.cfg.tabs[d.k]; if (d.k === 'system' && !S.cfg.tabs.system) S.cfg.sysEnabled = false; saveCfg(); render(true); },
+    notifUnmuteAll: () => { S.cfg.notifMuted = []; saveCfg(); render(true); },
+    notifMuteApp: () => { e.stopPropagation(); if (d.app && !S.cfg.notifMuted.includes(d.app)) { S.cfg.notifMuted.push(d.app); saveCfg(); } S.flash = null; render(); },
+    timer: () => startTimer(+d.m),
+    timerStop: () => { clearTimeout(timerDone); S.timer = null; render(true); },
     wxMenu: () => openMenu('wx', el),
+    cityMenu: () => openMenu('city', el),
+    city: () => { S.autoPlace = false; LS.set('city', d.c); S.menu = null; setPlace(Places.city(d.c)); },
+    cityAuto: () => { S.autoPlace = true; LS.set('city', 'auto'); S.menu = null; render(true); locateUser(); },
     mprev: () => nusa.media('prev'), mnext: () => nusa.media('next'), mtoggle: () => nusa.media('toggle'),
     openSource: () => { const m = S.media; if (m) nusa.openSource({ pid: m.pid, path: m.path, source: m.source }); },
     muteToggle: () => { if (S.audio) { nusa.mute(!S.audio.muted); S.audio = { ...S.audio, muted: !S.audio.muted }; render(true); } },
     calDay: () => { S.calSel = +d.t; render(true); },
     calSettings: () => nusa.calendarSettings(),
     mirror: () => toggleMirror(),
+    // Tray
     fileOpen: () => nusa.fileOpen(S.shelf[+d.i]),
     fileRemove: () => { e.stopPropagation(); removeFromShelf(S.shelf[+d.i]); },
+    fileSel: () => { e.stopPropagation(); const p = d.path; S.shelfSel = S.shelfSel.includes(p) ? S.shelfSel.filter((x) => x !== p) : [...S.shelfSel, p]; render(true); },
+    removeSelected: () => { S.shelf = S.shelf.filter((p) => !S.shelfSel.includes(p)); S.shelfSel = []; LS.set('shelf', S.shelf); syncShelfMain(); render(true); },
+    addShelfNote: () => { if (!S.noteText.trim()) return; S.shelfNotes = [{ text: S.noteText.trim() }, ...S.shelfNotes]; S.noteText = ''; LS.set('shelfNotes', S.shelfNotes); render(true); },
+    noteCopy: () => { const n = S.shelfNotes[+d.ni]; if (n) nusa.copy(n.text); },
+    noteRemove: () => { e.stopPropagation(); S.shelfNotes.splice(+d.ni, 1); LS.set('shelfNotes', S.shelfNotes); render(true); },
     fileShow: () => nusa.fileShow(S.shelf[S.shelf.length - 1]),
-    trayClear: () => { S.shelf = []; LS.set('shelf', []); render(true); },
+    trayClear: () => { S.shelf = []; S.shelfNotes = []; S.shelfSel = []; LS.set('shelf', []); LS.set('shelfNotes', []); syncShelfMain(); render(true); },
+    // Phone Drop
+    pdStart: async () => { const info = await nusa.phonedropStart(); if (info?.url) { S.phoneDrop = { active: true, url: info.url }; render(true); } },
+    pdStop: () => { nusa.phonedropStop(); S.phoneDrop = { active: false, url: null }; render(true); },
+    pdCopyUrl: () => { if (S.phoneDrop.url) nusa.copy(S.phoneDrop.url); },
+    pdApprove: async () => { e.stopPropagation(); await nusa.phonedropApprove(d.id); S.flash = null; render(); },
+    pdDecline: () => { e.stopPropagation(); nusa.phonedropDecline(d.id); S.flash = null; render(); },
+    // Music
     mjump: () => { const s = S.music.queue[+d.k]; if (s) nusa.senandung('POST', '/api/remote/cmd', { cmd: 'jump', index: s.i }); },
     mplay: () => { const s = S.music.results[+d.k]; if (s) nusa.senandung('POST', '/api/remote/cmd', { cmd: 'play', item: s }); },
     mqueue: () => { e.stopPropagation(); const s = S.music.results[+d.k]; if (s) nusa.senandung('POST', '/api/remote/cmd', { cmd: 'queue', item: s }); },
+    // Tasks & Focus
     pick: () => { S.taskPick = S.taskPick?.[0] === d.l ? null : [d.l, +d.t]; render(true); $('#taskIn')?.focus(); },
     taskToggle: () => { const t = task(); if (t) { t.done = !t.done; t.doneAt = t.done ? Date.now() : null; saveTasks(); refreshBody(); } },
     taskDel: () => { S.tasks = S.tasks.filter((t) => t.id !== d.id); saveTasks(); refreshBody(); },
@@ -1123,42 +1637,84 @@ document.addEventListener('click', (e) => {
     taskSnooze: () => { const t = task(); if (t) { t.due = Date.now() + 600000; t.notified = false; saveTasks(); } S.flash = null; render(); },
     focus: () => startFocus(), break: () => startBreak(), focusStop: () => { clearTimeout(focusDone); S.focus = null; render(true); },
     focusTask: () => startFocus(25, task()),
-    dismiss: () => { S.flash = null; render(); },
-    cityMenu: () => openMenu('city', el), soundMenu: () => openMenu('sound', el),
-    city: () => { S.autoPlace = false; LS.set('city', d.c); S.menu = null; setPlace(Prayer.city(d.c)); },
-    cityAuto: () => { S.autoPlace = true; LS.set('city', 'auto'); S.menu = null; render(true); locateUser(); },
-    sound: () => { S.sound = d.s; LS.set('sound', d.s); S.menu = null; render(true); playPrayerSound(); setTimeout(stopPrayerSound, 4000); },
-    soonToggle: () => { S.soon = !S.soon; LS.set('soon', S.soon); S.menu = null; render(true); },
-    soundStop: () => { stopPrayerSound(); S.menu = null; render(true); },
-    surahMenu: () => openMenu('surah', el), qMenu: () => openMenu('q', el),
-    surah: () => { S.q.surah = +d.n; LS.set('qSurah', S.q.surah); S.menu = null; render(true); scrollQuran(false, 0); },
-    surahGo: () => { S.q.surah = Math.min(114, Math.max(1, S.q.surah + +d.d)); LS.set('qSurah', S.q.surah); render(true); scrollQuran(false, 0); },
-    qLang: () => { S.q.english = d.en === '1'; LS.set('qEnglish', S.q.english); const top = $('#qScroll')?.scrollTop; render(true); if ($('#qScroll')) $('#qScroll').scrollTop = top; },
-    qFont: () => { S.q.font = d.f; LS.set('qFont', d.f); S.menu = null; render(true); },
-    reciter: () => { LS.set('reciter', d.r); S.menu = null; if (S.reciting) recite(S.reciting.s, S.reciting.a); else render(true); },
-    mark: () => { S.q.mark = { s: S.q.surah, a: +d.a }; LS.set('qMark', S.q.mark); const top = $('#qScroll').scrollTop; render(true); $('#qScroll').scrollTop = top; },
-    goMark: () => { S.q.surah = S.q.mark.s; LS.set('qSurah', S.q.surah); render(true); scrollQuran(true, S.q.mark.a); },
-    recite: () => {
-      const a = $('#recite');
-      if (S.reciting) { a.paused ? a.play() : a.pause(); return render(true); }
-      recite(S.q.surah, S.q.mark && S.q.mark.s === S.q.surah ? S.q.mark.a : 1);
+    dismiss: () => { e.stopPropagation(); S.flash = null; render(); },
+    // Clips
+    clipsToggle: () => { S.cfg.clipsEnabled = !S.cfg.clipsEnabled; saveCfg(); render(true); },
+    addSnippet: () => {
+      if (!S.clipSnippet.trim()) return;
+      const entry = { id: uid(), type: 'text', text: S.clipSnippet.trim(), sig: 't:' + S.clipSnippet.trim() };
+      S.pinnedClips = [entry, ...S.pinnedClips]; S.clipSnippet = ''; LS.set('pinnedClips', S.pinnedClips); render(true);
     },
-    reciteFrom: () => { e.stopPropagation(); recite(S.q.surah, +d.a); },
-    reciteStop: () => { $('#recite').pause(); S.reciting = null; render(true); },
-    copy: () => { nusa.copy(S.clips[+d.i]); S.copied = +d.i; render(true); setTimeout(() => { S.copied = null; render(true); }, 1200); },
+    clipCopy: () => {
+      const c = findClip(d.id);
+      if (!c) return;
+      nusa.clipCopy(c); S.copied = c.id; render(true);
+      setTimeout(() => { S.copied = null; render(true); }, 1200);
+    },
+    clipPin: () => {
+      e.stopPropagation();
+      const idx = S.pinnedClips.findIndex((c) => c.id === d.id);
+      if (idx >= 0) S.pinnedClips.splice(idx, 1);
+      else { const c = S.clips.find((x) => x.id === d.id); if (c) S.pinnedClips = [c, ...S.pinnedClips]; }
+      LS.set('pinnedClips', S.pinnedClips); render(true);
+    },
+    clipDel: () => {
+      e.stopPropagation();
+      S.pinnedClips = S.pinnedClips.filter((c) => c.id !== d.id);
+      S.clips = S.clips.filter((c) => c.id !== d.id);
+      LS.set('pinnedClips', S.pinnedClips); render(true);
+    },
+    // Water
+    waterDrink: () => { const r = Water.logSip(S.water, S.water.sipMl); S.water = r.state; S.waterRefill = r.refillNeeded; saveWater(); render(true); },
+    waterDrinkFlash: () => { const r = Water.logSip(S.water, S.water.sipMl); S.water = r.state; S.waterRefill = r.refillNeeded; saveWater(); S.flash = null; render(); },
+    waterSnooze: () => { S.water = Water.snooze(S.water, Date.now(), 15); saveWater(); S.flash = null; render(); },
+    waterUndo: () => { S.water = Water.undoSip(S.water); S.waterRefill = false; saveWater(); render(true); },
+    waterCfgToggle: () => { S.waterCfgOpen = !S.waterCfgOpen; render(true); },
+    waterRemindToggle: () => { S.water = { ...S.water, remind: !S.water.remind }; saveWater(); render(true); },
+    waterReset: () => { S.water = Water.resetDay(S.water, localDateStr()); S.waterRefill = false; saveWater(); render(true); },
+    // Timer / Stopwatch / Pomodoro
+    tmMode: () => { S.timerMode = d.m; render(true); },
+    cdToggle: () => { S.cd = S.cd.running ? TimerLib.pauseCountdown(S.cd) : TimerLib.startCountdown(S.cd); render(true); },
+    cdAdj: () => { S.cd = TimerLib.adjustCountdown(S.cd, +d.d); render(true); },
+    cdPreset: () => { S.cd = TimerLib.createCountdown(+d.m); render(true); },
+    cdReset: () => { S.cd = TimerLib.createCountdown(Math.round(S.cd.durationMs / 60000)); render(true); },
+    cdRestart: () => { S.cd = TimerLib.startCountdown(TimerLib.createCountdown(Math.round(S.cd.durationMs / 60000))); S.flash = null; render(true); },
+    swToggle: () => { S.sw = S.sw.running ? TimerLib.pauseStopwatch(S.sw) : TimerLib.startStopwatch(S.sw); render(true); },
+    swLap: () => { S.sw = TimerLib.lapStopwatch(S.sw); render(true); },
+    swReset: () => { S.sw = TimerLib.resetStopwatch(); render(true); },
+    pomoToggle: () => { S.pomo = S.pomo.running ? TimerLib.pausePomodoro(S.pomo) : TimerLib.startPomodoro(S.pomo); syncPomoFocus(); render(true); },
+    pomoSkip: () => { S.pomo = TimerLib.advancePomodoro(S.pomo); syncPomoFocus(); render(true); },
+    pomoReset: () => { S.pomo = TimerLib.resetPomodoro(S.pomo); syncPomoFocus(); render(true); },
+    // System
+    sysNotchToggle: () => { S.cfg.sysNotch = !S.cfg.sysNotch; saveCfg(); render(true); },
+    // Tools
+    toolSub: () => { S.toolsSub = d.m; render(true); },
+    copyVal: () => { if (d.v) nusa.copy(d.v); },
+    useColor: () => { S.colorHex = d.c; render(true); },
+    pickColor: async () => {
+      try {
+        const res = await new EyeDropper().open();
+        if (res?.sRGBHex) {
+          S.colorHex = res.sRGBHex;
+          S.colorHist = [res.sRGBHex, ...S.colorHist.filter((x) => x !== res.sRGBHex)].slice(0, 8);
+          LS.set('colorHist', S.colorHist); render(true);
+        }
+      } catch {}
+    },
+    copyQrSvg: () => { const svg = $('#qrWrap')?.innerHTML; if (svg) nusa.copy(svg); },
+    qrFromClip: () => { const c = S.clips.find((x) => x.type === 'text')?.text; if (c) { S.qrText = c; render(true); } },
+    convCat: () => { S.convCat = d.c; const u = S.convCat === 'temperature' ? Tools.UNIT_CATEGORIES.temperature : Object.keys(Tools.UNIT_CATEGORIES[S.convCat]); S.convFrom = u[0]; S.convTo = u[1] || u[0]; render(true); },
+    convSwap: () => { const tmp = S.convFrom; S.convFrom = S.convTo; S.convTo = tmp; render(true); },
   };
   A[d.act]?.();
 });
 
-/* ================= mulai ================= */
-
+/* ================= Startup ================= */
 navigator.getBattery?.().then((b) => {
-  // PC tanpa baterai: Chromium ngelapor "100%, lagi dicas" terus; ikon baterai nggak usah ditampilin
   if (b.level === 1 && b.charging && b.chargingTime === 0 && b.dischargingTime === Infinity) return;
   let warned = false;
   const read = () => {
     S.battery = { level: Math.round(b.level * 100), charging: b.charging, toFull: isFinite(b.chargingTime) ? Math.round(b.chargingTime / 60) : null };
-    // Baterai lemah: sekali aja tiap turun ke 20%
     if (b.charging || S.battery.level > 20) warned = false;
     else if (!warned) { warned = true; if (!S.expanded) showFlash({ kind: 'low', percent: S.battery.level }, 4); }
   };
@@ -1171,20 +1727,19 @@ navigator.getBattery?.().then((b) => {
   b.addEventListener('levelchange', () => { read(); render(); });
   b.addEventListener('chargingtimechange', read);
 });
+
 applyTheme();
+syncWatchers();
 loadShelf();
 loadCalendar();
 setInterval(loadCalendar, 5 * 60000);
-
-setInterval(live, 1000);
-setInterval(checkPrayer, 15000);
+setInterval(() => { live(); checkTimers(); }, 1000);
+setInterval(checkWater, 60000);
 setTimeout(() => { checkTasks(); setInterval(checkTasks, 10000); }, 3000);
 setInterval(loadWeather, 15 * 60000);
 loadWeather();
-// Laptop dibawa pindah kota: dicek ulang tiap 30 menit
 locateUser();
 setInterval(locateUser, 30 * 60000);
 render(true);
 
-// Pengait buat tes otomatis (dipakai mode potret pas development)
-window.__nusa = { S, render, showFlash, startFocus, startTimer, recite, loadQuran, applyTheme, BUILTIN_THEMES };
+window.__nusa = { S, render, showFlash, startFocus, startTimer, applyTheme, BUILTIN_THEMES };

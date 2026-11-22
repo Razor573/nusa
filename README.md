@@ -4,7 +4,7 @@
 
 ### The Dynamic Island for your desktop
 
-Music, tasks, prayer times, Quran, weather and focus — living in a notch at the top of your screen.
+Music, tasks, weather, focus, water, timers, clipboard history, phone drop and system tools — living in a notch at the top of your screen.
 Click it, and it unfolds into a full panel. Free, no account, no ads.
 
 [![Download for Windows](https://img.shields.io/badge/Download-Windows%2010%2F11-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Hiroyki/nusa/releases/latest)
@@ -13,17 +13,16 @@ Click it, and it unfolds into a full panel. Free, no account, no ads.
 [![GitHub stars](https://img.shields.io/github/stars/Hiroyki/nusa?style=flat-square&color=5cdba8&logo=github)](https://github.com/Hiroyki/nusa/stargazers)
 [![Downloads](https://img.shields.io/github/downloads/Hiroyki/nusa/total?style=flat-square&color=5cdba8)](https://github.com/Hiroyki/nusa/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5cdba8?style=flat-square)](#-install)
-[![Latest release](https://img.shields.io/badge/release-v1.0.0-5cdba8?style=flat-square)](https://github.com/Hiroyki/nusa/releases/latest)
+[![Latest release](https://img.shields.io/badge/release-v1.0.1-5cdba8?style=flat-square)](https://github.com/Hiroyki/nusa/releases/latest)
 [![macOS · SwiftUI](https://img.shields.io/badge/macOS-SwiftUI-000000?style=flat-square&logo=apple&logoColor=white)](#-tech-stack)
 [![Desktop · Electron](https://img.shields.io/badge/desktop-Electron-47848F?style=flat-square&logo=electron&logoColor=white)](#-tech-stack)
 
 [![Themes](https://img.shields.io/badge/themes-11%20built--in-5cdba8?style=flat-square)](#-themes)
-[![Prayer times](https://img.shields.io/badge/prayer%20times-Kemenag%20criteria-5cdba8?style=flat-square)](#-features)
 [![License: MIT](https://img.shields.io/badge/license-MIT-5cdba8?style=flat-square)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-ff69b4?style=flat-square)](https://github.com/Hiroyki/nusa/issues)
 [![Built by Hiroyki](https://img.shields.io/badge/built%20by-Hiroyki-5cdba8?style=flat-square&logo=github&logoColor=white)](https://github.com/Hiroyki)
 
-> **🆕 Just landed:** 📍 **prayer times & weather follow your location automatically**, and ⏭️ **snappier music controls**: mash *Next* as fast as you like. [What's new ↓](#-changelog)
+> **🆕 Just landed (v1.0.1):** 📱 **Phone Drop** over local Wi-Fi, 💧 **Water tracker**, ⏱️ **Timer / Stopwatch / Pomodoro**, 🧰 **Tools** (calculator, color, units, QR, world clock), 🔔 **Windows notifications in the notch**, 📊 **Live system stats** & 🔴 **Mic/Camera dots** — all local-first with privacy-safe defaults. [What's new ↓](#-changelog)
 
 <br>
 
@@ -69,10 +68,10 @@ notch no matter which machine you're on.
 
 - 🪶 **Quiet by default** — a thin bar at the top edge, out of the way until you need it.
 - 🖱️ **Click-through** — everything around the notch passes clicks straight to the app behind it.
-- 👀 **Glanceable** — now-playing, next prayer, weather and tasks without stealing focus.
-- 📍 **Knows where you are** — prayer times, qibla and weather follow your location, no setup.
+- 👀 **Glanceable** — now-playing, weather, timers and tasks without stealing focus.
+- 📍 **Knows where you are** — weather follows your location automatically, no setup.
 - 🎨 **Yours** — 11 hand-tuned themes, one click to switch.
-- 🔒 **Local-first** — prayer times are calculated on your device; tasks and settings never leave it. No account, no telemetry. [Details ↓](#-privacy)
+- 🔒 **Local-first & privacy-safe** — tasks, clipboard history, water logs, timers and settings never leave your device. Optional monitors (clipboard, notifications, mic/cam dots, live system stats) are **off until you turn them on**. No account, no telemetry. [Details ↓](#-privacy)
 
 ## ✨ Features
 
@@ -81,13 +80,16 @@ notch no matter which machine you're on.
 | 🎵 | **Now Playing** | HD artwork, source-app icon, seek bar, click the cover to jump to the app | ✅ | ✅ | ✅ |
 | ▶️ | **Music** | Control whatever app is playing (Spotify, YouTube, Media Player…), or the Senandung queue + search | ✅ | ✅ | ✅ |
 | ✅ | **Tasks** | Natural language: *"Rapat QC besok jam 9"*, *"Call Budi in 30 min"* | ✅ | ✅ | ✅ |
-| 🎯 | **Focus** | 25-minute focus sessions, breaks, sessions-today counter | ✅ | ✅ | ✅ |
-| 🕌 | **Prayer** | Prayer times (Kemenag criteria), qibla, adhan, 10-min reminder | ✅ | ✅ | ✅ |
-| 📍 | **Location** | Detects your city automatically (or pick one) for prayer times, qibla & weather | ✅ | — | ✅ |
-| 📖 | **Quran** | 114 surahs, ID/EN translation, reciters, last-read bookmark | ✅ | ✅ | ✅ |
+| ⏱️ | **Timer / Stopwatch / Pomodoro** | Countdown presets & ±1m nudge, stopwatch with laps, 4-cycle Pomodoro with breaks | ✅ | ✅ | ✅ |
+| 💧 | **Water** | Daily hydration goal, sip logging, bottle refill alert, hourly chart & smart reminders (off by default) | ✅ | — | ✅ |
+| 🗂️ | **File Shelf + Phone Drop** | Drop files on the notch to keep them, or scan a QR code to send/receive files with your phone over local Wi-Fi | ✅ | ✅ | ✅ |
+| 📋 | **Clipboard History** | Pinned & recent clips, search, text-only or text+images mode (off by default) | ✅ | ✅ | ✅ |
+| 🔔 | **Notifications in Notch** | Mirror Windows notifications into the notch with per-app mute and optional body preview (off by default) | ✅ | — | — |
+| 📊 | **Live System Stats** | CPU, RAM, disk, network up/down & battery sparkline in the panel or closed notch (off by default) | ✅ | — | ✅ |
+| 🧰 | **Tools** | Math calculator (`1250*15%`, `2^10`, `sqrt(2)`), color picker/contrast, unit converter, QR generator & world clock | ✅ | — | ✅ |
+| 🔴 | **Mic & Camera Dots** | Orange mic & green camera indicators in the notch when an app uses them (off by default) | ✅ | — | — |
+| 📍 | **Location** | Detects your city automatically (or pick one) for weather | ✅ | — | ✅ |
 | ☁️ | **Weather** | Temp, feels-like, hourly outlook, rain warnings | ✅ | ✅ | ✅ |
-| 🗂️ | **Tray** | Drop files on the notch to keep them, drag back out to use | ✅ | ✅ | ✅ |
-| 📋 | **Clips** | Clipboard history, one click to copy again | ✅ | ✅ | ✅ |
 | 🎨 | **Themes** | 11 built-in looks, switch from the gear menu | ✅ | — | ✅ |
 | 🔊 | **System** | Volume, battery, audio-device switch pop-up | ✅ | ✅ | ✅ |
 | 📅 | **Calendar** | Today's events + tasks due | ✅ | — | — |
@@ -102,10 +104,8 @@ notch no matter which machine you're on.
 | Home | Music |
 |:---:|:---:|
 | <img src="docs/screens/home.png" width="380"> | <img src="docs/screens/music.png" width="380"> |
-| **Tasks** | **Quran** |
-| <img src="docs/screens/tasks.png" width="380"> | <img src="docs/screens/quran.png" width="380"> |
-| **Prayer** | **Themes** |
-| <img src="docs/screens/prayer.png" width="380"> | <img src="docs/screens/themes.png" width="380"> |
+| **Tasks** | **Themes** |
+| <img src="docs/screens/tasks.png" width="380"> | <img src="docs/screens/themes.png" width="380"> |
 
 </div>
 
@@ -182,8 +182,8 @@ Permissions (Calendar, Camera, Bluetooth) are only requested when a feature need
 | **Click** the notch | Opens the panel |
 | **Esc** / click away | Closes the panel |
 | **Right-click** the notch | Open at login · Quit |
-| **⚙ gear** (panel) | Theme · Start at login · Quit |
-| **📍 city chip** (Prayer tab) | *Current location* or pick a city |
+| **⚙ gear** (panel) | Theme · Location · Privacy toggles · Visible tabs · Start at login · Quit |
+| **📱 Phone Drop** (Tray) | Start local Wi-Fi server & scan QR to send/receive files |
 | **Two-finger swipe** left/right on the notch | Previous / next track |
 | **Drag files** onto the notch | Saves them in **Tray** — drag them out to use |
 | **Drag the progress bar** | Seek through the track |
@@ -195,8 +195,12 @@ Permissions (Calendar, Camera, Bluetooth) are only requested when a feature need
 
 ## 🔐 Privacy
 
-No account, no analytics, no ads. Prayer times are calculated **on your device**; tasks, clips, the Tray and
-settings never leave it. Nusa only talks to the network for these:
+No account, no analytics, no ads. Everything runs **local-first** on your device — tasks, clipboard history, water logs,
+timers, the Tray and settings never leave it. Privacy-sensitive monitors (Clipboard history, Windows notifications,
+Mic & Camera dots, Live system stats, Water reminders) are **off by default until you turn them on** in Settings.
+
+Phone Drop runs strictly on your local Wi-Fi with a per-session token and requires your explicit approval before saving any
+uploaded file. Nusa only talks to the network for these:
 
 | What | Who | What's sent |
 |---|---|---|
@@ -204,9 +208,8 @@ settings never leave it. Nusa only talks to the network for these:
 | City name | [BigDataCloud](https://www.bigdatacloud.com/free-api/free-reverse-geocode-to-city-api) | Coordinates rounded to ~1 km |
 | Weather | [Open-Meteo](https://open-meteo.com) | Coordinates of your city |
 | HD album art | iTunes Search | Song title + artist |
-| Quran audio | islamic.network CDN | Which ayah you play |
 
-Don't want auto-location? Pick a city from the 📍 chip in the Prayer tab and Nusa stops asking.
+Don't want auto-location? Pick a city in **⚙ Settings → Location** and Nusa stops asking.
 On Windows you can also turn it off in **Settings → Privacy & security → Location**.
 
 ## 🧰 Tech stack
@@ -216,7 +219,7 @@ On Windows you can also turn it off in **Settings → Privacy & security → Loc
 | Native macOS app | **Swift · SwiftUI · AppKit · EventKit · AVFoundation** |
 | Desktop app (Win/macOS/Linux) | **Electron · JavaScript · HTML · CSS** |
 | Packaging | **electron-builder** (NSIS · DMG · AppImage · DEB) |
-| Prayer times | **PrayTimes.org** algorithm with Kemenag RI criteria |
+| Phone Drop | Built-in Node `http` server + pure-JS QR encoder |
 | Weather | **[Open-Meteo](https://open-meteo.com)** |
 | Location | **Windows.Devices.Geolocation** (WinRT) · IP fallback · BigDataCloud reverse-geocode |
 | Media control | **Windows SMTC** (WinRT) · MPRIS / `playerctl` on Linux |
@@ -224,9 +227,9 @@ On Windows you can also turn it off in **Settings → Privacy & security → Loc
 
 ## 🔢 Nusa in numbers
 
-| 🖥️ Platforms | 🎨 Themes | ✨ Features | 📖 Surahs | 🔑 Accounts |
-|:---:|:---:|:---:|:---:|:---:|
-| **3** | **11** built-in | **14** | **114** | **0** |
+| 🖥️ Platforms | 🎨 Themes | ✨ Features | 🔑 Accounts |
+|:---:|:---:|:---:|:---:|
+| **3** | **11** built-in | **17** | **0** |
 
 ## 🛠️ Build from source
 
@@ -248,7 +251,7 @@ Needs Xcode Command Line Tools (`swiftc`, `clang`) and Python 3 + Pillow for the
 ```sh
 cd desktop
 npm install          # if Electron didn't download: node node_modules/electron/install.js
-npm test             # prayer-time, location & task-parser tests
+npm test             # unit & integration tests (places, tasks, water, timer, tools, QR, phone drop)
 npm start            # development
 npm run dist:win     # Windows installer  -> desktop/dist/Nusa-Setup-*.exe
 npm run dist:linux   # AppImage + .deb     -> desktop/dist/
@@ -267,10 +270,9 @@ npm run dist:mac     # dmg + zip (Intel & Apple Silicon) -> desktop/dist/
 
 | Path | What's inside |
 |---|---|
-| `Sources/` | Native macOS SwiftUI app (notch, panel, Home/Music/Tasks/Tray/Clips/Prayer/Quran tabs) |
+| `Sources/` | Native macOS SwiftUI app (notch, panel, Home/Music/Tasks/Tray/Clips tabs) |
 | `helper/` | Now-playing reader — a dylib loaded by `/usr/bin/perl`, since macOS 15.4+ blocks MediaRemote for regular apps |
-| `desktop/` | Electron app for **Windows, macOS & Linux**, plus the theme system |
-| `assets/` | Adhan audio, Quran data, Arabic fonts — sources & licenses in [`assets/CREDITS.md`](assets/CREDITS.md) |
+| `desktop/` | Electron app for **Windows, macOS & Linux**, plus the theme system & productivity modules |
 | `docs/` | Banner, demo GIFs and screenshots used in this README |
 
 ## ❓ FAQ
@@ -278,7 +280,7 @@ npm run dist:mac     # dmg + zip (Intel & Apple Silicon) -> desktop/dist/
 <details>
 <summary><b>Is it really free? What's the catch?</b></summary>
 
-It's a personal, open-source project (MIT). No accounts, no telemetry — prayer times, tasks and settings stay local.
+It's a personal, open-source project (MIT). No accounts, no telemetry — tasks, clipboard history, timers and settings stay local.
 
 </details>
 
@@ -298,9 +300,9 @@ Not yet. Themes currently live in the desktop (Electron) build. Porting them to 
 </details>
 
 <details>
-<summary><b>Prayer times show the wrong city. How do I fix it?</b></summary>
+<summary><b>Weather shows the wrong city. How do I fix it?</b></summary>
 
-Open the **Prayer** tab and click the 📍 chip. Choose **Current location** to let Nusa detect it (it re-checks every
+Open **⚙ Settings → Location**. Choose **Current location** to let Nusa detect it (it re-checks every
 30 minutes, so it follows you when you travel), or pick a city to pin it. If detection is off, make sure
 **Settings → Privacy & security → Location** is on — otherwise Nusa falls back to a rougher IP-based guess.
 
@@ -333,7 +335,7 @@ It fades out of the way when a screen-recording toolbar or a share bar appears i
 
 - [x] Windows / macOS / Linux desktop apps
 - [x] Themes — 11 built-in
-- [x] Automatic location for prayer times & weather (Windows & Linux)
+- [x] Automatic location for weather (Windows & Linux)
 - [ ] Automatic location on the native macOS app
 - [ ] Themes on the native macOS app
 - [ ] Search any city worldwide
@@ -351,10 +353,23 @@ Ideas, bug reports and PRs are all welcome!
 ## 📝 Changelog
 
 <details open>
-<summary><b>Latest — location & music</b></summary>
+<summary><b>v1.0.1 — life & productivity suite</b></summary>
 
-- 📍 **Automatic location** — prayer times, qibla and weather follow where you are (Windows Location, with an IP
-  fallback). Pick a city any time from the 📍 chip; *Current location* is the new default.
+- 📱 **Phone Drop** — send and receive files between your phone and desktop over local Wi-Fi via QR code, with explicit approval before saving.
+- 💧 **Water tracker** — daily hydration goal, sip logging, bottle refill alert, hourly chart & smart reminders (off by default).
+- ⏱️ **Timer / Stopwatch / Pomodoro** — countdown presets with ±1m nudge, lap stopwatch, and 4-cycle Pomodoro.
+- 📋 **Clipboard history** — pinned & recent clips, search, text-only or text+images mode (off by default).
+- 🔔 **Windows notifications** — mirror notifications into the notch with per-app mute (off by default).
+- 📊 **Live system stats & 🔴 Mic/Camera dots** — optional CPU/RAM/disk/network/battery monitor and mic/cam in-use indicators (off by default).
+- 🧰 **Tools** — calculator, color picker/contrast, unit converter, QR generator & world clock.
+
+</details>
+
+<details>
+<summary><b>Previous — location & music</b></summary>
+
+- 📍 **Automatic location** — weather follows where you are (Windows Location, with an IP
+  fallback). Pick a city any time from Settings; *Current location* is the default.
 - ⏭️ **Snappier music controls** — Next / Previous / Play / Seek respond instantly, even when you click several times
   in a row, and always go to the app shown in the notch (no more skipping the wrong player when two are open).
 - 🎶 **Senandung** — Next / Previous now work on the Senandung queue too.
@@ -383,8 +398,6 @@ If Nusa makes your desktop a little nicer:
 
 ## 🙏 Credits
 
-- **Prayer times** — [PrayTimes.org](http://praytimes.org) algorithm, Kemenag RI criteria (Fajr 20°, Isha 18°, Asr Shafi'i).
-- **Quran text, translation & reciters** — see [`assets/CREDITS.md`](assets/CREDITS.md).
 - **Weather** — [Open-Meteo](https://open-meteo.com).
 - **Location names** — [BigDataCloud](https://www.bigdatacloud.com) reverse geocoding · IP fallback by [ipwho.is](https://ipwho.is).
 - **Icons** — hand-drawn SVG, no icon-font dependency.
@@ -393,19 +406,18 @@ If Nusa makes your desktop a little nicer:
 ## 📄 License
 
 The code is released under the [MIT License](LICENSE) — use it, fork it, learn from it.
-Bundled assets (adhan audio, Quran text & translations, Arabic fonts) keep their own licenses; see
-[`assets/CREDITS.md`](assets/CREDITS.md).
 
 ## 🇮🇩 Bahasa Indonesia
 
 **Nusa** = Dynamic Island buat desktop kamu. Notch kecil di tengah atas layar yang isinya lagu yang lagi diputer,
-jadwal sholat (kriteria **Kemenag RI**), kiblat, Al-Qur'an 114 surah + terjemahan Indonesia, cuaca, tugas, dan fokus.
+cuaca, tugas, timer/pomodoro, catatan minum air, riwayat clipboard, kirim file dari HP, dan tools harian.
 
-- 📍 **Lokasi otomatis** — jadwal sholat & cuaca langsung ikut kota kamu, nggak perlu setting.
+- 📍 **Lokasi otomatis** — cuaca langsung ikut kota kamu, nggak perlu setting.
 - 🎵 **Kontrol musik** — Spotify, YouTube, Media Player, apa aja; klik *Next* berkali-kali tetap lancar.
 - ✅ **Tugas pakai bahasa sehari-hari** — *"Rapat QC besok jam 9"*, *"minum obat 30 menit lagi"*.
-- 🕌 **Adzan & pengingat** 10 menit sebelum waktu sholat.
-- 🔒 Gratis, tanpa akun, tanpa iklan.
+- 📱 **Phone Drop & Tray** — simpan file di notch atau kirim file dari HP lewat Wi-Fi lokal.
+- 💧 **Water, Timer & Tools** — pengingat minum air, stopwatch/pomodoro, kalkulator, konversi unit & QR.
+- 🔒 Gratis, tanpa akun, tanpa iklan, dan fitur sensitif (clipboard, notifikasi, kamera/mikrofon) **mati secara default** sampai kamu nyalakan sendiri.
 
 **[⬇️ Download untuk Windows](https://github.com/Hiroyki/nusa/releases/latest)** — muncul *"Windows protected your PC"*?
 Klik **More info → Run anyway** (installer-nya belum ditandatangani).

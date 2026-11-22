@@ -1,7 +1,47 @@
 import AppKit
 import SwiftUI
 
-/// Cuaca dari Open-Meteo (gratis, tanpa akun) buat kota yang dipilih di tab Prayer.
+struct WeatherPlace: Equatable {
+    var name: String
+    var latitude: Double
+    var longitude: Double
+    var timeZone: TimeZone
+
+    static let cikarang = WeatherPlace(name: "Cikarang", latitude: -6.2615, longitude: 107.1528, timeZone: TimeZone(identifier: "Asia/Jakarta")!)
+
+    private static func city(_ name: String, _ lat: Double, _ lon: Double, _ zone: String) -> WeatherPlace {
+        WeatherPlace(name: name, latitude: lat, longitude: lon, timeZone: TimeZone(identifier: zone)!)
+    }
+
+    static let all: [WeatherPlace] = [
+        cikarang,
+        city("Bekasi", -6.2383, 106.9756, "Asia/Jakarta"),
+        city("Jakarta", -6.2088, 106.8456, "Asia/Jakarta"),
+        city("Bogor", -6.5971, 106.8060, "Asia/Jakarta"),
+        city("Bandung", -6.9175, 107.6191, "Asia/Jakarta"),
+        city("Semarang", -6.9667, 110.4167, "Asia/Jakarta"),
+        city("Yogyakarta", -7.7956, 110.3695, "Asia/Jakarta"),
+        city("Surabaya", -7.2575, 112.7521, "Asia/Jakarta"),
+        city("Palembang", -2.9761, 104.7754, "Asia/Jakarta"),
+        city("Medan", 3.5952, 98.6722, "Asia/Jakarta"),
+        city("Denpasar", -8.6705, 115.2126, "Asia/Makassar"),
+        city("Balikpapan", -1.2379, 116.8529, "Asia/Makassar"),
+        city("Makassar", -5.1477, 119.4327, "Asia/Makassar"),
+        city("Jayapura", -2.5337, 140.7181, "Asia/Jayapura"),
+    ]
+
+    static func named(_ name: String?) -> WeatherPlace { all.first { $0.name == name } ?? cikarang }
+
+    var zoneLabel: String {
+        switch timeZone.identifier {
+        case "Asia/Makassar": "WITA"
+        case "Asia/Jayapura": "WIT"
+        default: "WIB"
+        }
+    }
+}
+
+/// Cuaca dari Open-Meteo (gratis, tanpa akun).
 final class WeatherStore: ObservableObject {
     static let shared = WeatherStore()
 
@@ -21,7 +61,7 @@ final class WeatherStore: ObservableObject {
     @Published private(set) var hours: [Hour] = []
     /// Dipanggil kalau kemungkinan hujan tinggi dalam 2 jam ke depan.
     var onRain: ((Hour) -> Void)?
-    var place: () -> PrayerTimes.Place = { .cikarang }
+    var place: () -> WeatherPlace = { .cikarang }
     private var lastRainAlert = Date.distantPast
     private var timer: Timer?
 
@@ -142,7 +182,7 @@ struct WeatherChip: View {
         let wasPinned = model.pinned
         model.pinned = true
         let menu = NSMenu()
-        let place = model.prayers.place
+        let place = model.place
         menu.addItem(.sectionHeader(title: "\(place.name) · \(WeatherStore.label(w.code)) · feels \(Int((w.feels ?? 0).rounded()))°"))
         let f = DateFormatter()
         f.timeZone = place.timeZone

@@ -1,12 +1,18 @@
 // Nusa untuk Windows & Linux: jendela transparan di tengah atas layar, isinya notch HTML.
 const { app, BrowserWindow, screen, ipcMain, clipboard, Tray, Menu, nativeImage, shell } = require('electron');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const media = require('./media');
 const audio = require('./audio');
 const calendar = require('./calendar');
 const location = require('./location');
+const system = require('./system');
+const privacy = require('./privacy');
+const notifications = require('./notifications');
+const phonedrop = require('./phonedrop');
 
 const W = 840, H = 440;
 let win = null, tray = null;
@@ -104,18 +110,6 @@ function create() {
       send('yield', covered);
     }, covered ? 1200 : 1500);
   });
-
-  // Riwayat clipboard (teks aja), dicek tiap detik
-  // Electron 45: clipboard.readText() ngembaliin Promise, jadi wajib ditunggu. Dulu nggak ditunggu ->
-  // tiap detik kebaca "[object Promise]" baru -> tab Clips nambah kartu & panel kedip tiap detik.
-  const readClip = async () => { try { const t = await clipboard.readText(); return typeof t === 'string' ? t : ''; } catch { return ''; } };
-  let lastClip = null;
-  readClip().then((t) => { lastClip = t; });
-  setInterval(async () => {
-    if (lastClip === null) return;
-    const t = await readClip();
-    if (t && t !== lastClip) { lastClip = t; send('clip', String(t)); }
-  }, 1000);
 }
 
 ipcMain.on('rect', (_e, r) => { rect = r; });
@@ -136,13 +130,8 @@ ipcMain.handle('senandung', (_e, method, route, body) => new Promise((resolve) =
   req.end();
 }));
 
-// Aset bawaan (data Quran) dibaca lewat sini; fetch file:// nggak jalan di halaman
-ipcMain.handle('asset', (_e, name) => {
-  if (!/^[a-z0-9.-]+\.json$/i.test(name)) return null;
-  return fs.readFileSync(path.join(__dirname, 'app', 'assets', name), 'utf8');
-});
 ipcMain.on('media-cmd', (_e, cmd) => media.command(cmd));
-// Lokasi user (buat sholat, kiblat, cuaca); dipanggil pas nyala & tiap 30 menit kalau mode Current location
+// Lokasi user (buat cuaca); dipanggil pas nyala & tiap 30 menit kalau mode Current location
 ipcMain.handle('locate', () => location.locate().catch(() => null));
 ipcMain.on('volume', (_e, level) => audio.setVolume(level));
 ipcMain.on('mute', (_e, on) => audio.setMute(!!on));
@@ -204,11 +193,224 @@ const isFile = (p) => typeof p === 'string' && path.isAbsolute(p) && fs.existsSy
 ipcMain.handle('file-info', async (_e, p) => isFile(p) ? { path: p, name: path.basename(p), icon: await fileIcon(p) } : null);
 ipcMain.on('file-open', (_e, p) => { if (isFile(p)) shell.openPath(p); });
 ipcMain.on('file-show', (_e, p) => { if (isFile(p)) shell.showItemInFolder(p); });
+const fallbackDragIcon = () => nativeImage.createFromPath(path.join(__dirname, 'build', 'tray.png'));
 ipcMain.on('file-drag', async (e, p) => {
   if (!isFile(p)) return;
   const icon = nativeImage.createFromDataURL((await fileIcon(p)) || '');
-  e.sender.startDrag({ file: p, icon: icon.isEmpty() ? nativeImage.createFromPath(path.join(__dirname, 'build', 'tray.png')) : icon });
+  e.sender.startDrag({ file: p, icon: icon.isEmpty() ? fallbackDragIcon() : icon });
 });
+ipcMain.on('tray-drag-many', async (e, paths) => {
+  const valid = (Array.isArray(paths) ? paths : []).filter(isFile);
+  if (!valid.length) return;
+  const icon = valid.length === 1 ? nativeImage.createFromDataURL((await fileIcon(valid[0])) || '') : fallbackDragIcon();
+  e.sender.startDrag({ files: valid, icon: icon.isEmpty() ? fallbackDragIcon() : icon });
+});
+ipcMain.on('tray-drag-text', (e, text) => {
+  const tmp = path.join(os.tmpdir(), `nusa-note-${Date.now()}.txt`);
+  try {
+    fs.writeFileSync(tmp, String(text ?? ''), 'utf8');
+    e.sender.startDrag({ file: tmp, icon: fallbackDragIcon() });
+  } catch {}
+});
+
+let currentShelfPaths = [];
+ipcMain.on('shelf-sync', (_e, paths) => {
+  currentShelfPaths = Array.isArray(paths) ? paths.filter(isFile) : [];
+});
+
+/* ================= Clipboard History (off by default) ================= */
+let clipsConfig = { enabled: false, mode: 'text' };
+let clipsTimer = null;
+let lastClipSig = null;
+
+function readClipboardFiles() {
+  try {
+    if (process.platform === 'win32') {
+      const hdrop = clipboard.readBuffer('CF_HDROP');
+      if (hdrop && hdrop.length >= 20) {
+        const offset = hdrop.readUInt32LE(0);
+        const wide = hdrop.readUInt32LE(16) !== 0;
+        const body = hdrop.subarray(offset);
+        const list = wide ? body.toString('utf16le').split('\0') : body.toString('latin1').split('\0');
+        const out = [];
+        for (const p of list) {
+          if (!p) break;
+          if (isFile(p)) out.push(p);
+        }
+        if (out.length) return out;
+      }
+      const fnw = clipboard.readBuffer('FileNameW');
+      if (fnw && fnw.length > 0) {
+        const p = fnw.toString('utf16le').replace(/\0.*$/, '');
+        if (isFile(p)) return [p];
+      }
+    } else if (process.platform === 'linux') {
+      const raw = clipboard.readBuffer('text/uri-list');
+      if (raw && raw.length > 0) {
+        const out = raw.toString('utf8').split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => l.startsWith('file://'))
+          .map((l) => { try { return decodeURIComponent(new URL(l).pathname); } catch { return ''; } })
+          .filter(isFile);
+        if (out.length) return out;
+      }
+    }
+  } catch {}
+  return [];
+}
+
+async function readClipboardSnapshot(mode) {
+  if (mode === 'files' || mode === 'all') {
+    const files = readClipboardFiles();
+    if (files.length) {
+      return {
+        sig: 'files:' + files.join('|'),
+        item: { type: 'files', files: files.map((p) => ({ path: p, name: path.basename(p) })) },
+      };
+    }
+  }
+  if (mode === 'all') {
+    try {
+      const img = await Promise.resolve(clipboard.readImage());
+      if (img && !img.isEmpty()) {
+        const sz = img.getSize();
+        const thumb = sz.width > 360 || sz.height > 360 ? img.resize({ width: Math.min(360, sz.width) }) : img;
+        const png = thumb.toPNG();
+        const hash = crypto.createHash('sha1').update(png).digest('hex').slice(0, 12);
+        return {
+          sig: 'img:' + hash,
+          item: { type: 'image', dataUrl: thumb.toDataURL(), hash, width: sz.width, height: sz.height },
+        };
+      }
+    } catch {}
+  }
+  if (mode === 'text' || mode === 'all') {
+    try {
+      const t = await Promise.resolve(clipboard.readText());
+      if (typeof t === 'string' && t.length > 0) {
+        return { sig: 'text:' + t, item: { type: 'text', text: t } };
+      }
+    } catch {}
+  }
+  return null;
+}
+
+function stopClipsPolling() {
+  if (clipsTimer) { clearInterval(clipsTimer); clipsTimer = null; }
+  lastClipSig = null;
+}
+
+function startClipsPolling() {
+  stopClipsPolling();
+  readClipboardSnapshot(clipsConfig.mode).then((snap) => {
+    lastClipSig = snap ? snap.sig : '';
+  });
+  clipsTimer = setInterval(async () => {
+    if (!clipsConfig.enabled || lastClipSig === null) return;
+    const snap = await readClipboardSnapshot(clipsConfig.mode);
+    if (snap && snap.sig !== lastClipSig) {
+      lastClipSig = snap.sig;
+      send('clip', snap.item);
+    }
+  }, 1000);
+}
+
+ipcMain.on('clips-config', (_e, cfg) => {
+  const enabled = Boolean(cfg && cfg.enabled);
+  const mode = cfg && ['text', 'files', 'all'].includes(cfg.mode) ? cfg.mode : 'text';
+  clipsConfig = { enabled, mode };
+  if (enabled) startClipsPolling();
+  else stopClipsPolling();
+});
+
+ipcMain.on('clip-copy', (_e, item) => {
+  try {
+    if (typeof item === 'string') { clipboard.writeText(item); return; }
+    if (!item || typeof item !== 'object') return;
+    if (item.type === 'text') {
+      clipboard.writeText(String(item.text || ''));
+    } else if (item.type === 'image' && item.dataUrl) {
+      clipboard.writeImage(nativeImage.createFromDataURL(item.dataUrl));
+    } else if (item.type === 'files' && Array.isArray(item.files)) {
+      const paths = item.files.map((f) => f.path).filter(isFile);
+      if (!paths.length) return;
+      if (process.platform === 'linux') {
+        clipboard.writeBuffer('text/uri-list', Buffer.from(paths.map((p) => 'file://' + encodeURI(p)).join('\r\n'), 'utf8'));
+      } else if (process.platform === 'win32') {
+        const joined = paths.join('\0') + '\0\0';
+        const strBuf = Buffer.from(joined, 'utf16le');
+        const header = Buffer.alloc(20);
+        header.writeUInt32LE(20, 0);
+        header.writeUInt32LE(1, 16);
+        clipboard.writeBuffer('CF_HDROP', Buffer.concat([header, strBuf]));
+      } else {
+        clipboard.writeText(paths.join('\n'));
+      }
+    }
+  } catch {}
+});
+
+ipcMain.on('clip-drag', async (e, item) => {
+  try {
+    if (!item) return;
+    if (typeof item === 'string' || item.type === 'text') {
+      const text = typeof item === 'string' ? item : item.text;
+      const tmp = path.join(os.tmpdir(), `nusa-clip-${Date.now()}.txt`);
+      fs.writeFileSync(tmp, String(text ?? ''), 'utf8');
+      e.sender.startDrag({ file: tmp, icon: fallbackDragIcon() });
+    } else if (item.type === 'image' && item.dataUrl) {
+      const img = nativeImage.createFromDataURL(item.dataUrl);
+      const tmp = path.join(os.tmpdir(), `nusa-clip-${Date.now()}.png`);
+      fs.writeFileSync(tmp, img.toPNG());
+      e.sender.startDrag({ file: tmp, icon: img.isEmpty() ? fallbackDragIcon() : img.resize({ width: 48 }) });
+    } else if (item.type === 'files' && Array.isArray(item.files)) {
+      const valid = item.files.map((f) => f.path).filter(isFile);
+      if (!valid.length) return;
+      const icon = valid.length === 1 ? nativeImage.createFromDataURL((await fileIcon(valid[0])) || '') : fallbackDragIcon();
+      e.sender.startDrag({ files: valid, icon: icon.isEmpty() ? fallbackDragIcon() : icon });
+    }
+  } catch {}
+});
+
+/* ================= System Stats, Privacy Dots, Notifications, Phone Drop ================= */
+let sysWatch = { notch: false, tab: false };
+let sysRunning = false;
+ipcMain.on('system-watch', (_e, st) => {
+  sysWatch = { notch: Boolean(st?.notch), tab: Boolean(st?.tab) };
+  const want = sysWatch.notch || sysWatch.tab;
+  if (want && !sysRunning) {
+    sysRunning = true;
+    system.start((snap) => send('system', snap));
+  } else if (!want && sysRunning) {
+    sysRunning = false;
+    system.stop();
+  }
+});
+
+ipcMain.on('privacy-watch', (_e, on) => {
+  if (on) privacy.start((st) => send('privacy', st));
+  else privacy.stop();
+});
+
+ipcMain.on('notif-watch', (_e, on) => {
+  if (on) notifications.start((n) => send('notif', n));
+  else notifications.stop();
+});
+ipcMain.on('notif-settings', () => shell.openExternal(process.platform === 'win32' ? 'ms-settings:notifications' : 'about:blank'));
+
+ipcMain.handle('phonedrop-start', async () => phonedrop.start({
+  app,
+  getShelf: () => currentShelfPaths,
+  onRequest: (req) => send('phonedrop-request', req),
+  onFiles: (files) => send('phonedrop-files', files),
+  onState: (st) => send('phonedrop-state', st),
+}));
+ipcMain.on('phonedrop-stop', () => {
+  phonedrop.stop();
+  send('phonedrop-state', { active: false });
+});
+ipcMain.handle('phonedrop-approve', (_e, id) => phonedrop.approve(id));
+ipcMain.on('phonedrop-decline', (_e, id) => phonedrop.decline(id));
 
 // Klik kanan di notch: menu kecil kayak versi Mac
 ipcMain.on('context-menu', () => {
@@ -281,4 +483,11 @@ app.whenReady().then(() => {
   }, process.platform === 'linux' ? 400 : 0);
 });
 app.on('second-instance', () => win && send('open-panel'));
+app.on('before-quit', () => {
+  stopClipsPolling();
+  system.stop();
+  privacy.stop();
+  notifications.stop();
+  phonedrop.stop();
+});
 app.on('window-all-closed', () => app.quit());

@@ -29,7 +29,6 @@ enum Flash: Equatable {
     case volume(level: Double, muted: Bool)
     case timerDone
     case track
-    case prayer(name: String, time: String, soon: Bool)
     case task(id: String, title: String, time: String)
     case rain(time: String, chance: Int)
     case focusEnd(rest: Bool, title: String?)
@@ -54,7 +53,6 @@ enum Presentation: Equatable {
             case .volume: "volume"
             case .timerDone: "done"
             case .track: "track"
-            case .prayer: "prayer"
             case .task: "task"
             case .rain: "rain"
             case .focusEnd: "focusEnd"
@@ -64,7 +62,7 @@ enum Presentation: Equatable {
     }
 }
 
-enum PanelTab { case home, music, tasks, tray, clips, prayer, quran }
+enum PanelTab { case home, music, tasks, tray, clips }
 
 /// Ukuran badan notch. `shoulder` = lengkung cekung yang nyambung ke tepi atas layar.
 struct IslandSize: Equatable {
@@ -117,50 +115,8 @@ final class IslandModel: ObservableObject {
         return w > 0 ? CGSize(width: w, height: screen.safeAreaInsets.top) : nil
     }
     let calendar = CalendarModel()
-    @Published var prayers = PrayerTimes(place: .named(UserDefaults.standard.string(forKey: "prayerPlace"))) {
-        didSet { UserDefaults.standard.set(prayers.place.name, forKey: "prayerPlace") }
-    }
-    enum PrayerSound: String { case adzan, tone, silent }
-    @Published var prayerSound = PrayerSound(rawValue: UserDefaults.standard.string(forKey: "prayerSound") ?? "") ?? .adzan {
-        didSet { UserDefaults.standard.set(prayerSound.rawValue, forKey: "prayerSound") }
-    }
-    @Published var prayerSoon = UserDefaults.standard.object(forKey: "prayerSoon") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(prayerSoon, forKey: "prayerSoon") }
-    }
-    @Published var prayerAlerts = UserDefaults.standard.object(forKey: "prayerAlerts") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(prayerAlerts, forKey: "prayerAlerts") }
-    }
-    @Published var pauseForPrayer = UserDefaults.standard.object(forKey: "pauseForPrayer") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(pauseForPrayer, forKey: "pauseForPrayer") }
-    }
-    /// File adzan pilihan user; kosong berarti bunyi pengingat bawaan.
-    @Published var adzanPath = UserDefaults.standard.string(forKey: "adzanPath") {
-        didSet { UserDefaults.standard.set(adzanPath, forKey: "adzanPath") }
-    }
-    private var alertSound: NSSound?
-
-    /// `preview`: cuplikan 4 detik pas user milih mode suara.
-    func playPrayerSound(preview: Bool = false) {
-        alertSound?.stop()
-        guard prayerSound != .silent else { return }
-        // Adzan: file pilihan user kalau ada, kalau nggak rekaman bawaan (assets/CREDITS.md)
-        let adzanFile = adzanPath ?? Bundle.main.path(forResource: "adhan", ofType: "mp3")
-        let custom = prayerSound == .adzan ? adzanFile.flatMap { NSSound(contentsOfFile: $0, byReference: true) } : nil
-        let sound = custom ?? NSSound(named: "Glass")
-        alertSound = sound
-        sound?.play()
-        if preview, custom != nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self, weak sound] in
-                if self?.alertSound === sound { sound?.stop() }
-            }
-        }
-    }
-
-    func stopPrayerSound() { alertSound?.stop() }
-
-    func dismissPrayer() {
-        stopPrayerSound()
-        flash = nil
+    @Published var place = WeatherPlace.named(UserDefaults.standard.string(forKey: "weatherPlace")) {
+        didSet { UserDefaults.standard.set(place.name, forKey: "weatherPlace") }
     }
     let clips = ClipHistory()
     var setVolume: (Double) -> Void = { _ in }
@@ -249,14 +205,13 @@ final class IslandModel: ObservableObject {
         case .focus: return compact(250 + bump)
         case .flash(let f):
             if f == .track { return IslandSize(width: 318, height: 60, radius: 20, shoulder: 10) }
-            if case .prayer = f { return IslandSize(width: 318, height: 60, radius: 20, shoulder: 10) }
             if case .task = f { return IslandSize(width: 340, height: 60, radius: 20, shoulder: 10) }
             if case .rain = f { return IslandSize(width: 318, height: 60, radius: 20, shoulder: 10) }
             if case .focusEnd = f { return IslandSize(width: 360, height: 60, radius: 20, shoulder: 10) }
             if case .device = f { return IslandSize(width: 330, height: 60, radius: 20, shoulder: 10) }
             if case .charging(_, true) = f { return IslandSize(width: 300, height: 58, radius: 20, shoulder: 10) }
             return compact(232)
-        case .expanded: return IslandSize(width: 760, height: tab == .prayer ? 204 : tab == .quran ? 400 : tab == .music || tab == .tasks ? 330 : 190, radius: 26, shoulder: 14)
+        case .expanded: return IslandSize(width: 760, height: tab == .music || tab == .tasks ? 330 : 190, radius: 26, shoulder: 14)
         }
     }
 

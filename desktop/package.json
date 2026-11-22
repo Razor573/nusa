@@ -1,7 +1,7 @@
 {
   "name": "nusa",
   "productName": "Nusa",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "desktopName": "Nusa",
   "description": "Dynamic Island for Windows, macOS & Linux",
   "author": "Quraish Rahmatulloh",
@@ -35,6 +35,10 @@
       "audio.js",
       "calendar.js",
       "location.js",
+      "system.js",
+      "privacy.js",
+      "notifications.js",
+      "phonedrop.js",
       "app/**/*",
       "build/tray.png"
     ],

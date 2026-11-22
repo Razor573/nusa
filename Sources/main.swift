@@ -33,7 +33,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bridge: MediaBridge!
     private var battery: BatteryWatcher!
     private var volume: VolumeWatcher!
-    private var prayer: PrayerWatcher!
     private var pending: DispatchWorkItem?
     private var inside = false
     private var swipeDetector = SwipeDetector()
@@ -69,8 +68,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         volume = VolumeWatcher(model: model)
         volume.start()
         model.clips.start()
-        prayer = PrayerWatcher(model: model)
-        prayer.start()
         TaskStore.shared.onDue = { [weak self] task in
             guard let self else { return }
             if !self.model.pinned { self.model.expanded = false }
@@ -78,11 +75,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.model.show(.task(id: task.id, title: task.title, time: task.due.map { dueText($0) } ?? ""), for: 30)
         }
         TaskStore.shared.start()
-        WeatherStore.shared.place = { [weak self] in self?.model.prayers.place ?? .cikarang }
+        WeatherStore.shared.place = { [weak self] in self?.model.place ?? .cikarang }
         WeatherStore.shared.onRain = { [weak self] hour in
             guard let self, self.model.focus?.phase != .focus else { return }
             let f = DateFormatter()
-            f.timeZone = self.model.prayers.place.timeZone
+            f.timeZone = self.model.place.timeZone
             f.dateFormat = "HH:mm"
             self.model.show(.rain(time: f.string(from: hour.time), chance: hour.rain), for: 8)
         }
@@ -113,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [self] in
                 guard tab != "none" else { return } // "none" = potret notch kecil
                 if let q = ProcessInfo.processInfo.environment["NUSA_SHOT_QUERY"] { MusicRemote.shared.query = q }
-                model.tab = ["home": .home, "music": .music, "tasks": .tasks, "tray": .tray, "clips": .clips, "prayer": .prayer, "quran": .quran][tab] ?? .home
+                model.tab = ["home": .home, "music": .music, "tasks": .tasks, "tray": .tray, "clips": .clips][tab] ?? .home
                 model.pinned = true
                 model.expanded = true
             }
@@ -141,19 +138,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + secs + 3) { self.snapTab(dir, "focus-end") }
                 DispatchQueue.main.asyncAfter(deadline: .now() + secs + 4) { [self] in model.show(.rain(time: "15:00", chance: 70), for: 8) }
                 DispatchQueue.main.asyncAfter(deadline: .now() + secs + 5.5) { self.snapTab(dir, "rain") }
-                return
-            }
-            // Tes murottal: putar dari ayat tertentu, catat ayat yang kebaca tiap detik
-            if let spec = ProcessInfo.processInfo.environment["NUSA_TEST_RECITE"] {
-                let p = spec.split(separator: ":").compactMap { Int($0) }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { QuranReader.shared.open(p[0]); QuranReader.shared.recite(from: p[0], p[1]) }
-                for sec in 3...24 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(sec)) {
-                        let r = QuranReader.shared.reciting
-                        try? "\(sec)s \(r.map { "\($0.surah):\($0.ayah)" } ?? "stop") playing=\(QuranReader.shared.audioPlaying)\n".appendTo(dir + "/recite.log")
-                        if sec == 8 { self.snapTab(dir, "recite") }
-                    }
-                }
                 return
             }
             let shotDelay = Double(ProcessInfo.processInfo.environment["NUSA_SHOT_DELAY"] ?? "") ?? 2.6
@@ -196,20 +180,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (3.6, {}, "tray"),
             (3.7, { [self] in model.tab = .clips; model.clips.seed(["Link grup Belajar AI Cikarang", "Rapat QC jam 9 pagi di ruang meeting lantai 2", "git push origin main"]) }, ""),
             (4.1, {}, "clips"),
-            (4.2, { [self] in model.tab = .prayer }, ""),
-            (4.5, {}, "prayer"),
-            (4.55, { [self] in model.tab = .quran }, ""),
-            (4.95, {}, "quran"),
-            (5.0, { [self] in model.tab = .home; model.shelf = [] }, ""),
+            (4.2, { [self] in model.tab = .home; model.shelf = [] }, ""),
         ]
         for (t, run, name) in steps {
             DispatchQueue.main.asyncAfter(deadline: .now() + t) { run(); if !name.isEmpty { snap(name) } }
         }
-        film("close", false, after: 5.1)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.9) { [self] in model.show(.track, for: 2.6) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6.2) { snap("track") }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6.4) { [self] in model.show(.prayer(name: "Maghrib", time: "17:48", soon: false), for: 3) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 7.1) { snap("prayer-now") }
+        film("close", false, after: 4.3)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.1) { [self] in model.show(.track, for: 2.6) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.4) { snap("track") }
     }
 
     func applicationWillTerminate(_ note: Notification) { bridge.stop() }

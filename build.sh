@@ -17,8 +17,6 @@ rm dist/Nusa-arm64 dist/Nusa-x86_64
 clang -O2 -dynamiclib -fobjc-arc -arch arm64 -arch arm64e -arch x86_64 -framework Foundation \
   helper/media.m -o "$APP/Contents/Resources/media.dylib"
 cp helper/run.pl "$APP/Contents/Resources/"
-cp assets/adhan.mp3 assets/quran.json assets/CREDITS.md "$APP/Contents/Resources/"
-cp -R assets/fonts "$APP/Contents/Resources/"
 
 python3 - <<'PY'
 from PIL import Image, ImageDraw
@@ -43,11 +41,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>Nusa</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>1.0.1</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
-  <key>ATSApplicationFontsPath</key><string>fonts</string>
   <key>NSCalendarsFullAccessUsageDescription</key><string>Nusa shows your calendar events in the panel.</string>
   <key>NSCalendarsUsageDescription</key><string>Nusa shows your calendar events in the panel.</string>
   <key>NSCameraUsageDescription</key><string>The camera powers the mirror in the panel and only turns on when you click it.</string>

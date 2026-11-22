@@ -1,5 +1,10 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
+const ALLOWED_EVENTS = [
+  'hover', 'media', 'clip', 'open-panel', 'audio', 'device', 'yield',
+  'system', 'privacy', 'notif', 'phonedrop-request', 'phonedrop-files', 'phonedrop-state',
+];
+
 contextBridge.exposeInMainWorld('nusa', {
   platform: process.platform,
   setRect: (r) => ipcRenderer.send('rect', r),
@@ -16,14 +21,29 @@ contextBridge.exposeInMainWorld('nusa', {
   locate: () => ipcRenderer.invoke('locate'),
   calendarSettings: () => ipcRenderer.send('calendar-settings'),
   senandung: (method, route, body) => ipcRenderer.invoke('senandung', method, route, body),
-  asset: (name) => ipcRenderer.invoke('asset', name),
-  // Rak: path file yang di-drop (Electron baru nggak ngasih File.path lagi), info/ikon, buka, seret keluar
+  // File Shelf (Tray)
   filePath: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
   fileInfo: (p) => ipcRenderer.invoke('file-info', p),
   fileOpen: (p) => ipcRenderer.send('file-open', p),
   fileShow: (p) => ipcRenderer.send('file-show', p),
   fileDrag: (p) => ipcRenderer.send('file-drag', p),
+  trayDragMany: (paths) => ipcRenderer.send('tray-drag-many', paths),
+  trayDragText: (text) => ipcRenderer.send('tray-drag-text', text),
+  shelfSync: (paths) => ipcRenderer.send('shelf-sync', paths),
+  // Clipboard History (Clips)
+  clipsConfig: (cfg) => ipcRenderer.send('clips-config', cfg),
+  clipCopy: (item) => ipcRenderer.send('clip-copy', item),
+  clipDrag: (item) => ipcRenderer.send('clip-drag', item),
+  // System, Privacy, Notifications, Phone Drop
+  systemWatch: (st) => ipcRenderer.send('system-watch', st),
+  privacyWatch: (on) => ipcRenderer.send('privacy-watch', on),
+  notifWatch: (on) => ipcRenderer.send('notif-watch', on),
+  notifSettings: () => ipcRenderer.send('notif-settings'),
+  phonedropStart: () => ipcRenderer.invoke('phonedrop-start'),
+  phonedropStop: () => ipcRenderer.send('phonedrop-stop'),
+  phonedropApprove: (id) => ipcRenderer.invoke('phonedrop-approve', id),
+  phonedropDecline: (id) => ipcRenderer.send('phonedrop-decline', id),
   on: (channel, fn) => {
-    if (['hover', 'media', 'clip', 'open-panel', 'audio', 'device', 'yield'].includes(channel)) ipcRenderer.on(channel, (_e, v) => fn(v));
+    if (ALLOWED_EVENTS.includes(channel)) ipcRenderer.on(channel, (_e, v) => fn(v));
   },
 });

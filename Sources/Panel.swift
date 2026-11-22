@@ -137,8 +137,6 @@ struct ExpandedView: View {
                 case .tasks: TasksTab(model: model)
                 case .tray: TrayTab(model: model, dropping: dropping)
                 case .clips: ClipsTab(clips: model.clips)
-                case .prayer: PrayerTab(model: model)
-                case .quran: QuranTab(model: model)
                 }
             }
             .frame(maxHeight: .infinity)
@@ -253,8 +251,6 @@ private struct TopBar: View {
             TabButton(title: "Tasks", symbol: "checklist", selected: model.tab == .tasks) { model.tab = .tasks }
             TabButton(title: "Tray", symbol: "tray.fill", selected: model.tab == .tray) { model.tab = .tray }
             TabButton(title: "Clips", symbol: "doc.on.clipboard.fill", selected: model.tab == .clips) { model.tab = .clips }
-            TabButton(title: "Prayer", symbol: "moon.stars.fill", selected: model.tab == .prayer) { model.tab = .prayer }
-            TabButton(title: "Quran", symbol: "book.closed.fill", selected: model.tab == .quran) { model.tab = .quran }
             Spacer()
             VolumeSlider(model: model)
             Rectangle().fill(hairline).frame(width: 1, height: 14).padding(.horizontal, 6)
@@ -557,7 +553,7 @@ private struct WeatherColumn: View {
                     }
                     Text("\(WeatherStore.label(w.code)) · feels \(Int((w.feels ?? t).rounded()))°")
                         .font(.system(size: 11.5, weight: .medium)).foregroundStyle(dim).lineLimit(1)
-                    Text(model.prayers.place.name).font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
+                    Text(model.place.name).font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
                     HStack(spacing: 10) {
                         ForEach(nextHours) { h in
                             VStack(spacing: 2) {
@@ -602,7 +598,7 @@ private struct WeatherColumn: View {
 
     private func hour(_ d: Date) -> String {
         let f = DateFormatter()
-        f.timeZone = model.prayers.place.timeZone
+        f.timeZone = model.place.timeZone
         f.dateFormat = "HH:mm"
         return f.string(from: d)
     }
